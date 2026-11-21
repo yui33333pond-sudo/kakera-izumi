@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#0b3a4a">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="かけら">
+<title>かけらの泉</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700&family=Noto+Sans+JP:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ログイン -->
+<main class="gate" id="gate" hidden>
+  <div class="gate-card">
+    <h1>かけらの泉</h1>
+    <p class="sub">自分だけの泉。</p>
+    <form id="loginForm">
+      <label for="email" class="hint">メールアドレス</label>
+      <input type="email" id="email" name="email" autocomplete="username" required>
+      <label for="password" class="hint">パスワード</label>
+      <input type="password" id="password" name="password" autocomplete="current-password" required>
+      <button class="throw" type="submit">入る</button>
+    </form>
+    <p class="gate-msg" id="gateMsg" aria-live="polite"></p>
+  </div>
+</main>
+
+<!-- 本体 -->
+<div class="wrap" id="app" hidden>
+  <div class="left">
+    <section class="surface" id="surface">
+      <svg class="rings" viewBox="0 0 300 300" aria-hidden="true"><circle cx="150" cy="150" r="40"/><circle cx="150" cy="150" r="80"/><circle cx="150" cy="150" r="120"/><circle cx="150" cy="150" r="148"/></svg>
+      <svg class="drop" aria-hidden="true"><circle cx="50%" cy="60%" r="4"/><circle cx="50%" cy="60%" r="4"/><circle cx="50%" cy="60%" r="4"/></svg>
+      <h1>かけらの泉</h1>
+      <p class="sub">タイトルも置き場所も決めなくていい。投げるだけ。</p>
+      <label for="inp" class="hint" style="display:block;margin-bottom:6px">思いついたこと、読んだこと、今日のこと</label>
+      <textarea id="inp" placeholder="例：accrual って発生主義のことか。メルマガで出てきた"></textarea>
+      <div class="row"><span class="hint" id="kbdHint">⌘/Ctrl + Enter でも投げられる</span><button class="throw" id="throw">投げる</button></div>
+      <div class="ripple" id="ripple" aria-live="polite"></div>
+      <p class="model" id="model" aria-live="polite"></p>
+    </section>
+    <section class="band">
+      <h2>泉を探す</h2>
+      <input type="search" id="q" placeholder="例：240の改正、発生主義、しんどい" enterkeyhint="search">
+      <div id="results" style="margin-top:14px"></div>
+    </section>
+  </div>
+  <section class="band strata">
+    <h2>積もったかけら</h2>
+    <div id="strata"></div>
+    <button class="ghost more" id="more" hidden>もっと昔を掘る</button>
+    <p class="foot"><span id="who"></span><button class="ghost small" id="logout">出る</button></p>
+  </section>
+</div>
+
+<div class="sheet" id="sheet"><div class="panel" id="panel" role="dialog" aria-modal="true" aria-label="かけら"></div></div>
+<div class="toast" id="toast"><span id="toastMsg"></span><button id="undo">元に戻す</button></div>
+
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>
