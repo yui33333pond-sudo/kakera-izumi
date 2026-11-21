@@ -15,9 +15,14 @@
  *   SENDERS        news@example.com, @example.jp  （カンマ区切り）
  *   YAHOO_ADDRESS  自分の Yahoo メールのアドレス
  *
+ *   FOLDER_LABEL   （なくてよい）まとめて取り込むラベル名。初期値は「泉行き」
+ *
  * 使い方
  *   1. tryIt を実行 → ログに「何が沈むか」が出る（まだ送らない）
  *   2. setup を実行 → 1時間ごとの見張りが始まる（最初の1回もすぐ動く）
+ *   「泉行き」ラベルをまとめて取り込むとき
+ *   3. tryFolder を実行 → 最初の5通ぶんの「何が沈むか」が出る
+ *   4. importFolder を実行 → 全部沈める（多いときは自動で続きから再開する）
  */
 
 const DONE_LABEL = 'kakera-done';   // 取り込んだスレッドに付く
@@ -35,6 +40,7 @@ function setup() {
 function tryIt() { watch(true); }
 
 function watch(dryRun) {
+  dryRun = dryRun === true;  // 時間で動くときは引数にイベントが入るので、true のときだけ「見るだけ」
   const cfg = conf_();
   const label = GmailApp.getUserLabelByName(DONE_LABEL) || GmailApp.createLabel(DONE_LABEL);
   const threads = GmailApp.search(`-label:${DONE_LABEL} ${LOOKBACK}`, 0, 40);
@@ -60,23 +66,68 @@ function watch(dryRun) {
   console.log(dryRun ? `試し：沈む予定のメール ${seen} 通` : `沈めた段落 ${sunk} 個（メール ${seen} 通）`);
 }
 
+// ---------- 「泉行き」ラベルの中身をまとめて取り込む ----------
+// 差出人は問わない。転送なら前置きを取る。量が多くても、6分の制限が近づいたら1分後に続きから再開する。
+const FOLDER_DONE = 'kakera-folder-done';
+
+function tryFolder() { importFolder(true); }
+
+function importFolder(dryRun) {
+  dryRun = dryRun === true;
+  const cfg = conf_();
+  if (!GmailApp.getUserLabelByName(cfg.folder)) throw new Error(`ラベル「${cfg.folder}」が見つからない`);
+  const done = GmailApp.getUserLabelByName(FOLDER_DONE) || GmailApp.createLabel(FOLDER_DONE);
+  const q = `label:${cfg.folder.replace(/[\s\/]/g, '-')} -label:${FOLDER_DONE}`;
+  const started = Date.now();
+  let sunk = 0, seen = 0, more = false;
+
+  ScriptApp.getProjectTriggers()
+    .filter((t) => t.getHandlerFunction() === 'importFolder')
+    .forEach((t) => ScriptApp.deleteTrigger(t));
+
+  for (;;) {
+    const threads = GmailApp.search(q, 0, dryRun ? 5 : 50);
+    if (!threads.length) break;
+    for (const th of threads) {
+      const items = [];
+      for (const msg of th.getMessages()) {
+        const k = toKakera_(msg, cfg, true);
+        if (k) items.push(...k);
+      }
+      if (items.length) seen++;
+      if (dryRun) {
+        console.log(`--- ${th.getFirstMessageSubject()}（${items.length}段落）\n` +
+          items.slice(0, 4).map((i) => '・' + i.body.slice(0, 120).replace(/\n/g, ' ')).join('\n'));
+        continue;
+      }
+      for (let i = 0; i < items.length; i += 200) sunk += send_(cfg, items.slice(i, i + 200));
+      th.addLabel(done);
+      if (Date.now() - started > 4.5 * 60 * 1000) { more = true; break; }
+    }
+    if (dryRun || more) break;
+  }
+
+  if (more) ScriptApp.newTrigger('importFolder').timeBased().after(60 * 1000).create();
+  console.log(dryRun ? `試し：最初の ${seen} 通ぶん（全部ではない）`
+    : `沈めた段落 ${sunk} 個（メール ${seen} 通）` + (more ? '。まだ残りがあるので1分後に続きから動く' : `。「${cfg.folder}」は全部終わった`));
+}
+
 // ---------- 1通のメール → かけら ----------
-function toKakera_(msg, cfg) {
+function toKakera_(msg, cfg, acceptAll) {
   const from = addr_(msg.getFrom());
   let body = msg.getPlainBody() || '';
   let subject = msg.getSubject() || '';
   let sender = name_(msg.getFrom());
   let source = 'gmail';
 
-  if (cfg.yahoo && from === cfg.yahoo) {
-    const fw = stripForward_(body);
-    if (!fw) return null;                    // 自分の Yahoo からでも、転送でなければ取らない
+  const fw = (acceptAll || (cfg.yahoo && from === cfg.yahoo)) ? stripForward_(body) : null;
+  if (fw) {
     body = fw.body;
     subject = fw.subject || subject.replace(/^\s*(fwd?|転送)\s*[:：]\s*/i, '');
     sender = fw.from ? name_(fw.from) : sender;
-    source = 'yahoo';
-  } else if (!accepted_(from, cfg.senders)) {
-    return null;
+    if (from === cfg.yahoo) source = 'yahoo';
+  } else if (!acceptAll && !accepted_(from, cfg.senders)) {
+    return null;                             // 登録した差出人でも、自分の Yahoo からの転送でもない
   }
 
   const paras = splitParas_(clean_(body));
@@ -191,6 +242,7 @@ function conf_() {
     token: p.INGEST_TOKEN,
     senders: (p.SENDERS || '').split(/[,\s]+/).map((s) => s.trim().toLowerCase()).filter(Boolean),
     yahoo: (p.YAHOO_ADDRESS || '').trim().toLowerCase(),
+    folder: (p.FOLDER_LABEL || '泉行き').trim(),
   };
 }
 function addr_(from) { const m = String(from).match(/<([^>]+)>/); return (m ? m[1] : String(from)).trim().toLowerCase(); }

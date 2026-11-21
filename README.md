@@ -79,29 +79,19 @@ Settings → Pages → Branch: `main` / `(root)` で公開。PCでもスマホ�
 差出人を足したいときは `SENDERS` を書き換えるだけ。過去14日分までさかのぼって見る。
 取り込んだかけらは、アプリを開いたときに端末で意味を計算する（それまで波紋・検索には出ない）。
 
-## 6. Yahoo メールの「泉行き」フォルダを一括取り込み
+## 6. 「泉行き」ラベルをまとめて取り込む（Gmail）
 
-1. Yahoo メールの **設定 → IMAP/POP/SMTPアクセスとメール転送** で
-   **「Yahoo! JAPAN公式サービス以外からのアクセスも有効にする」** をオンにして保存
-   （Yahoo! JAPAN ID を「パスワードを使わないログイン」にしていると IMAP は使えない。その場合はパスワードを設定する）
-2. 取り込み専用の鍵を用意する。Apps Script の `INGEST_TOKEN` と同じものでよい
-   （見られないときは SQL Editor で `select kakera_private.issue_ingest_token('ログインに使うメールアドレス', 'yahoo');` を実行して新しく作る）
-3. ターミナルで、まず「見るだけ」
+5 で置いた Apps Script に入っている。差出人は問わず、転送メールなら前置きを取る。
 
-   ```bash
-   cd ~/Desktop/アプリ/KAKERA && python3 tools/yahoo_import.py
-   ```
-
-   Yahoo のアドレスとパスワードを聞かれる（パスワードは画面に出ない・保存しない）。
-   最初の5通ぶんの「何が沈むか」が表示される。
-4. よければ本番
-
-   ```bash
-   cd ~/Desktop/アプリ/KAKERA && python3 tools/yahoo_import.py --send
-   ```
-
-   アドレス・パスワード・取り込み専用の鍵を聞かれる。同じメールは二度入らないので、何度実行しても大丈夫。
-   フォルダ名が違うときは `--folder 別の名前` を付ける。
+1. Apps Script のエディタで、いまの中身を全部消して最新の `gas/gmail-watcher.gs` を貼り直し、💾 保存
+   （貼り直したら **setup** をもう一度実行する。1時間ごとの見張りが正しく取り込むようになる）
+2. 関数選びで **tryFolder** → ▶ 実行。最初の5通ぶんの「何が沈むか」がログに出る（まだ送らない）
+3. よければ **importFolder** → ▶ 実行。量が多いときは、6分の制限の手前で止まって1分後に自動で続きから動く
+   - ログの最後に「全部終わった」と出たら完了
+   - 取り込んだスレッドには `kakera-folder-done` ラベルが付く。あとで「泉行き」に足したメールは、もう一度 importFolder を実行すれば足した分だけ入る
+   - ラベル名が違うときは、スクリプト プロパティに `FOLDER_LABEL` を足して名前を入れる
+   - メルマガ用とは別の Gmail アカウントにラベルがあるときは、そのアカウントで同じように新しいプロジェクトを作り、
+     スクリプト プロパティを入れて tryFolder / importFolder だけ使えばよい（setup は不要）
 
 ## 調整つまみ
 
@@ -125,8 +115,7 @@ Settings → Pages → Branch: `main` / `(root)` で公開。PCでもスマホ�
 | `embed-worker.js` | 端末内の埋め込みモデル |
 | `supabase/01_schema.sql` | テーブル・RLS・検索関数 |
 | `supabase/02_ingest.sql` | 取り込み専用の鍵と取り込み口 |
-| `gas/gmail-watcher.gs` | Gmail の見張り番（Apps Script） |
-| `tools/yahoo_import.py` | Yahoo メールのフォルダを一括取り込み |
+| `gas/gmail-watcher.gs` | Gmail の見張り番と「泉行き」の一括取り込み（Apps Script） |
 
 取り込み（Gmail・Yahoo・Notion）で入ったかけらは `embedding` が空のまま入れてよい。
 アプリを開いたときに、端末のモデルで順に埋め込んでいく（`backfill`）。
@@ -137,7 +126,7 @@ Settings → Pages → Branch: `main` / `(root)` で公開。PCでもスマホ�
 2. ✅ スマホのホーム画面に追加
 3. ✅ Gmail の見張り番（Apps Script）：メルマガ用の Gmail に届くメルマガを1時間ごとに取り込む。
    登録した差出人と、自分の Yahoo からの転送だけ受け付ける。転送の前置きは取り除く。
-4. Yahoo メールの「泉行き」フォルダを IMAP で一括取り込み
+4. ✅ Gmail の「泉行き」ラベルを一括取り込み
 5. Notion の書き出しを一括取り込み
 6. **レンズ**：英単語／英語の記事／会計／日々 を自動で見分けて絞り込む（タグ付けはしない）
 7. **今日の英単語**：1日1語が湧く。「知ってる」で卒業（検索には残る）、「まだ」は間隔を広げて再出現。
