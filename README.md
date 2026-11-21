@@ -79,6 +79,30 @@ Settings → Pages → Branch: `main` / `(root)` で公開。PCでもスマホ�
 差出人を足したいときは `SENDERS` を書き換えるだけ。過去14日分までさかのぼって見る。
 取り込んだかけらは、アプリを開いたときに端末で意味を計算する（それまで波紋・検索には出ない）。
 
+## 6. Yahoo メールの「泉行き」フォルダを一括取り込み
+
+1. Yahoo メールの **設定 → IMAP/POP/SMTPアクセスとメール転送** で
+   **「Yahoo! JAPAN公式サービス以外からのアクセスも有効にする」** をオンにして保存
+   （Yahoo! JAPAN ID を「パスワードを使わないログイン」にしていると IMAP は使えない。その場合はパスワードを設定する）
+2. 取り込み専用の鍵を用意する。Apps Script の `INGEST_TOKEN` と同じものでよい
+   （見られないときは SQL Editor で `select kakera_private.issue_ingest_token('ログインに使うメールアドレス', 'yahoo');` を実行して新しく作る）
+3. ターミナルで、まず「見るだけ」
+
+   ```bash
+   cd ~/Desktop/アプリ/KAKERA && python3 tools/yahoo_import.py
+   ```
+
+   Yahoo のアドレスとパスワードを聞かれる（パスワードは画面に出ない・保存しない）。
+   最初の5通ぶんの「何が沈むか」が表示される。
+4. よければ本番
+
+   ```bash
+   cd ~/Desktop/アプリ/KAKERA && python3 tools/yahoo_import.py --send
+   ```
+
+   アドレス・パスワード・取り込み専用の鍵を聞かれる。同じメールは二度入らないので、何度実行しても大丈夫。
+   フォルダ名が違うときは `--folder 別の名前` を付ける。
+
 ## 調整つまみ
 
 `app.js` の先頭：
@@ -102,6 +126,7 @@ Settings → Pages → Branch: `main` / `(root)` で公開。PCでもスマホ�
 | `supabase/01_schema.sql` | テーブル・RLS・検索関数 |
 | `supabase/02_ingest.sql` | 取り込み専用の鍵と取り込み口 |
 | `gas/gmail-watcher.gs` | Gmail の見張り番（Apps Script） |
+| `tools/yahoo_import.py` | Yahoo メールのフォルダを一括取り込み |
 
 取り込み（Gmail・Yahoo・Notion）で入ったかけらは `embedding` が空のまま入れてよい。
 アプリを開いたときに、端末のモデルで順に埋め込んでいく（`backfill`）。
