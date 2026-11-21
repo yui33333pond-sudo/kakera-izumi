@@ -41,7 +41,7 @@ export function supabaseStore(sb) {
     },
     // 意味の計算かレンズの見分けがまだのもの
     async pending(limit) {
-      return must(await sb.from('kakera').select('id, body, source, lens').or('embedding.is.null,lens.is.null').limit(limit));
+      return must(await sb.from('kakera').select('id, body, source, lens').or('embedding.is.null,lens.is.null,and(lens.eq.daily,source.in.(gmail,yahoo))').limit(limit));
     },
     async setEmbedding(id, vec, lens) {
       const patch = { embedding: JSON.stringify(vec) };
@@ -105,7 +105,7 @@ export function memoryStore() {
       }).sort((a, b) => (b.similarity + (b.literal ? 0.05 : 0)) - (a.similarity + (a.literal ? 0.05 : 0))).slice(0, n);
     },
     async updateBody(id, body) { const r = rows.find((x) => x.id === id); if (r) { r.body = body; r.embedding = null; } },
-    async pending(limit) { return rows.filter((r) => !r.embedding || !r.lens).slice(0, limit).map(({ id, body, source, lens }) => ({ id, body, source, lens })); },
+    async pending(limit) { return rows.filter((r) => !r.embedding || !r.lens || (r.lens === 'daily' && r.source !== 'hand')).slice(0, limit).map(({ id, body, source, lens }) => ({ id, body, source, lens })); },
     async setEmbedding(id, vec, lens) { const r = rows.find((x) => x.id === id); if (r) { r.embedding = vec; if (lens) r.lens = lens; } },
     async bumpWords(ws, origin, kid) {
       for (const w0 of ws) {

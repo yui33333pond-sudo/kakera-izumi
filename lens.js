@@ -50,7 +50,8 @@ export function classify(row, vec, protos) {
   const s = stats(text);
   const fromMail = row.source === 'gmail' || row.source === 'yahoo';
   if (!fromMail && s.len <= 80 && s.words >= 1 && s.words <= 4) return 'word';
-  if (s.ratio >= 0.5 && s.words >= 8 && (fromMail || s.len >= 200)) return 'article';
+  if (s.ratio >= 0.5 && s.words >= 8 && s.len >= 200) return 'article';
+  if (fromMail) return s.ratio >= 0.5 && s.words >= 8 ? 'article' : 'accounting';  // メルマガは日々に入れない
   if (!protos) return null;
   return top2(vec, protos.accounting) >= top2(vec, protos.daily) ? 'accounting' : 'daily';
 }
