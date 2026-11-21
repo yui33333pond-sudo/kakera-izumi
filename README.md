@@ -117,6 +117,7 @@ Settings → Pages → Branch: `main` / `(root)` で公開。PCでもスマホ�
 | `supabase/02_ingest.sql` | 取り込み専用の鍵と取り込み口 |
 | `supabase/03_lens_words.sql` | レンズの列、英単語の表 |
 | `lens.js` | レンズの見分けと英単語の拾い出し |
+| `dict.js` | 英和辞書（[EJDict](https://github.com/kujirahand/EJDict)・CC0）を引く |
 | `gas/gmail-watcher.gs` | Gmail の見張り番と「泉行き」の一括取り込み（Apps Script） |
 
 取り込み（Gmail・Yahoo・Notion）で入ったかけらは `embedding` が空のまま入れてよい。

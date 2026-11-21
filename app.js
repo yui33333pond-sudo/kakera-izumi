@@ -1,4 +1,5 @@
 import { supabaseStore, memoryStore } from './store.js';
+import { lookup } from './dict.js';
 import { LENSES, lensLabel, loadProtos, classify, wordsFromMine, wordsFromMail } from './lens.js';
 
 // ---- 調整つまみ（関係ない文どうしは 0.1〜0.3、近い話は 0.4 以上になりやすい） ----
@@ -321,15 +322,38 @@ async function loadWord() {
     const meta = w.origin === 'mine' ? '自分で投げた単語' : `メルマガで ${w.freq} 回`;
     const again = w.step > 0 ? ` · ${w.step + 1} 回目` : '';
     $('wordBox').innerHTML = `<div class="wd-word">${esc(w.word)}</div><p class="wd-meta">${meta}${again}</p>`
+      + `<div class="wd-mean" id="wdMean"><span class="empty">意味をさがしてる…</span></div>`
       + (mine ? `<div class="wd-mine">${card(mine)}</div>` : '')
       + (ex.length ? `<ul class="wd-ex">${ex.map((e) => `<li>${mark(e.s, w.word)}<span class="d">${dlabel(e.r.created_at)}</span></li>`).join('')}</ul>`
         : '<p class="empty small-empty">メルマガの中の例文はまだない。</p>')
       + (answered
         ? `<p class="wd-done">${w.status === 'known' ? '卒業！かけらは検索にずっと残るよ。' : `また ${GAPS[Math.min(w.step - 1, GAPS.length - 1)]} 日後に湧いてくる。`}今日の1語はおしまい。</p>`
         : '<div class="row wd-btns"><button class="ghost" id="wKnow">知ってる</button><button class="throw" id="wAgain">まだ</button></div>');
+    wordExamples = ex.map((e) => e.s);
+    showMeaning(w.word);
   } catch (e) { console.error(e); $('wordday').hidden = true; }
   finally { wordLoading = false; }
 }
+let wordExamples = [];
+async function showMeaning(word) {
+  const link = `<a class="wd-link" href="https://ejje.weblio.jp/content/${encodeURIComponent(word)}" target="_blank" rel="noopener noreferrer">Weblioで見る</a>`
+    + `<button class="ghost small" id="wAsk">Claudeに聞く文章をコピー</button><span class="copied" id="wCopied"></span>`;
+  let html;
+  try {
+    const hit = await lookup(word);
+    html = hit
+      ? `<ol class="wd-senses">${hit.senses.slice(0, 4).map((x) => `<li>${esc(x)}</li>`).join('')}</ol>`
+        + (hit.word !== word ? `<p class="wd-meta">（${esc(hit.word)} の形で）</p>` : '')
+      : '<p class="empty small-empty">手元の辞書には載ってなかった。専門用語かも。</p>';
+  } catch { html = '<p class="empty small-empty">辞書を開けなかった。</p>'; }
+  if (wordNow && wordNow.word === word && $('wdMean')) $('wdMean').innerHTML = html + `<div class="wd-links">${link}</div>`;
+}
+function wordPrompt() {
+  const w = wordNow.word;
+  return `英単語「${w}」の意味を、会計・監査の文脈も含めて日本語でやさしく教えて。品詞、よく一緒に使う言い方、覚え方のコツもあれば。`
+    + (wordExamples.length ? `\n\n私が読んだメルマガに出てきた文：\n${wordExamples.map((x) => '・' + x).join('\n')}\n\nこの文の中ではどういう意味かも教えて。` : '');
+}
+
 async function answerWord(knowIt) {
   const w = wordNow; if (!w) return;
   const patch = knowIt ? { status: 'known' } : { step: w.step + 1, due: later(GAPS[Math.min(w.step, GAPS.length - 1)]) };
@@ -385,6 +409,11 @@ document.addEventListener('click', async (e) => {
   const chip = e.target.closest('.chip'); if (chip) { setLens(chip.dataset.lens); return; }
   if (e.target.id === 'wKnow') { answerWord(true); return; }
   if (e.target.id === 'wAgain') { answerWord(false); return; }
+  if (e.target.id === 'wAsk') {
+    try { await navigator.clipboard.writeText(wordPrompt()); $('wCopied').textContent = 'コピーした。Claudeに貼ってね'; }
+    catch { $('wCopied').textContent = 'コピーできなかった'; }
+    return;
+  }
   if (e.target.id === 'edit') { startEdit(); return; }
   if (e.target.id === 'editCancel') { cancelEdit(); return; }
   if (e.target.id === 'editSave') { saveEdit(e.target.dataset.id); return; }
