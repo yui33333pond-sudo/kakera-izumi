@@ -109,8 +109,14 @@ function renderStrata() {
     cur.list.push(it);
   }
   $('strata').innerHTML = groups.map((g, i) => {
-    let prev = null;
-    const cards = g.list.map((it) => { const c = card(it, prev === it.group_id ? 'chain' : ''); prev = it.group_id; return c; }).join('');
+    // 同じ投げ込み（メルマガ1通など）は2段落まで見せて、残りはたたむ
+    const runs = [];
+    for (const it of g.list) {
+      const last = runs[runs.length - 1];
+      if (last && last[0].group_id === it.group_id) last.push(it); else runs.push([it]);
+    }
+    const cards = runs.map((run) => run.slice(0, 2).map((it, j) => card(it, j ? 'chain' : '')).join('')
+      + (run.length > 2 ? `<button class="fold" data-id="${run[0].id}">…ほか ${run.length - 2} 段落</button>` : '')).join('');
     return `<div class="layer" style="--p:${Math.min(20 + i * 14, 100)}%"><div class="bar"></div><div><h3>${dlabel(g.t)}</h3><div class="list">${cards}</div></div></div>`;
   }).join('');
 }
@@ -276,7 +282,7 @@ $('undo').addEventListener('click', async () => {
   try { await store.restore([row]); await loadStrata(true); } catch (e) { fail(e); }
 });
 document.addEventListener('click', async (e) => {
-  const k = e.target.closest('.k'); if (k) { openSheet(k.dataset.id); return; }
+  const k = e.target.closest('.k, .fold'); if (k) { openSheet(k.dataset.id); return; }
   if (e.target.id === 'close') { closeSheet(); return; }
   if (e.target.id === 'edit') { startEdit(); return; }
   if (e.target.id === 'editCancel') { cancelEdit(); return; }

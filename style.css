@@ -18,13 +18,13 @@ h1,h2{font-family:"Zen Maru Gothic","Noto Sans JP",sans-serif;font-weight:700;li
 .go .drop circle:nth-child(2){animation-delay:.18s}.go .drop circle:nth-child(3){animation-delay:.36s}
 @keyframes rip{0%{r:4;opacity:.9}100%{r:160;opacity:0}}
 @media(prefers-reduced-motion:reduce){.go .drop circle{animation:none}}
-textarea,input[type=search],input[type=email],input[type=text]{width:100%;font:16px/1.55 inherit;font-family:inherit;border-radius:14px;border:1.5px solid var(--line);padding:14px 16px;color:var(--ink);background:var(--bg);outline:none}
+textarea,input[type=search],input[type=email],input[type=text],input[type=password]{width:100%;font-family:inherit;font-size:16px;line-height:1.55;font-weight:400;border-radius:14px;border:1.5px solid var(--line);padding:14px 16px;color:var(--ink);background:var(--bg);outline:none}
 .surface textarea{border-color:transparent}
 textarea{min-height:110px;resize:vertical;position:relative;z-index:1}
 textarea:focus,input:focus{border-color:var(--coral)!important}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px;position:relative;z-index:1}
 .hint{font-size:13px;color:#b9dcd7}
-button{font:500 15px/1 inherit;font-family:inherit;min-height:44px;padding:0 18px;border-radius:999px;border:0;cursor:pointer;color:inherit}
+button{font-family:inherit;font-size:15px;line-height:1;font-weight:500;min-height:44px;padding:0 18px;border-radius:999px;border:0;cursor:pointer;color:inherit}
 button:focus-visible{outline:3px solid var(--coral);outline-offset:2px}
 button:disabled{opacity:.55;cursor:default}
 .throw{background:var(--coral);color:#2a0d05;font-weight:700;margin-left:auto}
@@ -38,7 +38,7 @@ button:disabled{opacity:.55;cursor:default}
 .model{margin:10px 0 0;font-size:12px;color:#8fbab4;position:relative;z-index:1;min-height:1em}
 .band{padding:24px max(4vw,16px)}
 .band h2{font-size:20px;margin-bottom:12px}
-.k{display:block;width:100%;text-align:left;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:14px;padding:12px 14px;font:15px/1.6 inherit;font-family:inherit;cursor:pointer;min-height:44px;white-space:pre-wrap;overflow-wrap:anywhere}
+.k{display:block;width:100%;text-align:left;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:14px;padding:12px 14px;font-family:inherit;font-size:15px;line-height:1.6;cursor:pointer;min-height:44px;white-space:pre-wrap;overflow-wrap:anywhere}
 .k:hover{border-color:var(--aqua)}
 .k .d{display:block;font-size:13px;color:var(--mute);margin-bottom:2px}
 .k .clip{display:-webkit-box;-webkit-line-clamp:8;-webkit-box-orient:vertical;overflow:hidden}
@@ -79,3 +79,4 @@ button:disabled{opacity:.55;cursor:default}
 .gate-card .ghost{border-color:rgba(255,255,255,.25)}
 .gate-msg{font-size:14px;color:#ffd2c4;min-height:1.4em}
 .editbox{margin:6px 0 18px}.editbox textarea{min-height:160px}.editbox .throw{margin-left:auto}
+.fold{min-height:36px;margin-top:-4px;justify-self:start;background:transparent;color:var(--mute);font-size:13px;padding:0 12px;border:1px dashed var(--line)}
