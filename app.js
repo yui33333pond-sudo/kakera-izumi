@@ -1,4 +1,5 @@
 import { supabaseStore, memoryStore } from './store.js';
+import { LENSES, lensLabel, loadProtos, classify, wordsFromMine, wordsFromMail } from './lens.js';
 
 // ---- 調整つまみ（関係ない文どうしは 0.1〜0.3、近い話は 0.4 以上になりやすい） ----
 const RIPPLE_MIN = 0.40;   // 波紋に出す近さ
@@ -14,7 +15,7 @@ const DAY = 864e5;
 const demo = new URLSearchParams(location.search).has('demo');
 const cfg = window.KAKERA_CONFIG || {};
 let store;
-if (demo) { store = memoryStore(); window.__kakera = { get store() { return store; }, embed: (...a) => embed(...a) }; }
+if (demo) { store = memoryStore(); window.__kakera = { get store() { return store; }, embed: (...a) => embed(...a), loadWord: () => loadWord() }; }
 else if (cfg.supabaseUrl && cfg.supabaseKey) {
   store = supabaseStore(window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey, {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
@@ -79,7 +80,8 @@ const dlabel = (iso) => {
 };
 const dkey = (iso) => { const d = new Date(iso); return d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate(); };
 const known = new Map(); // id -> row（開くときに使う）
-const card = (it, cls = '') => { known.set(it.id, it); return `<button class="k ${cls}" data-id="${it.id}"><span class="d">${dlabel(it.created_at)}</span><span class="clip">${esc(it.body)}</span></button>`; };
+const tag = (it) => [it.source === 'gmail' || it.source === 'yahoo' ? 'メルマガ' : '', lensLabel(it.lens)].filter(Boolean).map((t) => ' · ' + t).join('');
+const card = (it, cls = '') => { known.set(it.id, it); return `<button class="k ${cls}" data-id="${it.id}"><span class="d">${dlabel(it.created_at)}${tag(it)}</span><span class="clip">${esc(it.body)}</span></button>`; };
 
 let toastTimer = 0, lastDel = null;
 function toast(msg, undo = false) {
@@ -91,17 +93,18 @@ function toast(msg, undo = false) {
 const fail = (e) => { console.error(e); toast('うまくいかなかった：' + (e.message || e)); };
 
 // ---- 地層 ----
-let strata = [], oldest = null;
+let strata = [], oldest = null, curLens = null;
 async function loadStrata(reset) {
   if (reset) { strata = []; oldest = null; }
-  const rows = await store.recent(oldest, PAGE);
+  const rows = await store.recent(oldest, PAGE, curLens);
   strata.push(...rows);
   if (rows.length) oldest = rows[rows.length - 1].created_at;
   $('more').hidden = rows.length < PAGE;
   renderStrata();
 }
 function renderStrata() {
-  if (!strata.length) { $('strata').innerHTML = '<p class="empty">まだ何も沈んでない。上から投げてみて。</p>'; return; }
+  $('strataTitle').textContent = curLens ? `積もったかけら（${lensLabel(curLens)}）` : '積もったかけら';
+  if (!strata.length) { $('strata').innerHTML = curLens ? '<p class="empty">このレンズのかけらはまだない。</p>' : '<p class="empty">まだ何も沈んでない。上から投げてみて。</p>'; return; }
   const groups = []; let cur = null;
   for (const it of strata) {
     const k = dkey(it.created_at);
@@ -136,11 +139,12 @@ async function throwIt() {
     const rows = await store.insert(paras.map((body, seq) => ({ body, seq, group_id, created_at: now })));
     rows.sort((a, b) => a.seq - b.seq);
     $('inp').value = '';
-    strata.unshift(...rows); renderStrata();
+    if (!curLens) { strata.unshift(...rows); renderStrata(); }
     $('ripple').innerHTML = `<div class="lab">沈んだよ${rows.length > 1 ? `（${rows.length}つの段落に分けた）` : ''}。波紋を待ってる…</div>`;
 
     const vecs = await embed(paras);
-    await Promise.all(rows.map((r, i) => store.setEmbedding(r.id, vecs[i])));
+    await settle(rows, vecs, true);
+    if (!curLens) renderStrata();
     // どの段落からでも、いちばん近い過去のかけらを1つだけ
     const best = (await Promise.all(vecs.map((v) => store.match(v, 1, group_id)))).flat()
       .sort((a, b) => b.similarity - a.similarity);
@@ -169,7 +173,7 @@ async function runSearch(q) {
   if (!modelReady) $('results').innerHTML = '<p class="empty">泉の準備中…</p>';
   try {
     const [v] = await embed([q]);
-    const rows = await store.search(q, v, 12);
+    const rows = await store.search(q, v, 12, curLens);
     if (my !== searchSeq) return;
     hits = rows.filter((r) => r.literal || r.similarity >= SEARCH_MIN);
     renderResults(q);
@@ -225,23 +229,111 @@ async function saveEdit(id) {
     openSheet(id);
     toast('直した');
     const [v] = await embed([body]);
-    await store.setEmbedding(id, v);
+    await settle([it], [v], false);
     if ($('sheet').classList.contains('on')) openSheet(id); // 糸の先を新しい中身で引き直す
   } catch (e) { fail(e); $('editSave') && ($('editSave').disabled = false); }
 }
 
 // ---- 埋め込み待ちのかけら（取り込み分など）を後から処理 ----
 async function backfill() {
+  let done = 0;
   try {
     for (;;) {
-      const rows = await store.unembedded(16);
+      const rows = await store.pending(16);
       if (!rows.length) return;
-      $('model').textContent = `まだ波紋の出ないかけらを${rows.length}件ずつ整え中…`;
+      $('model').textContent = `取り込んだかけらを整え中…（${done}件済み）`;
       const vecs = await embed(rows.map((r) => r.body));
-      for (let i = 0; i < rows.length; i++) await store.setEmbedding(rows[i].id, vecs[i]);
+      // レンズがまだ無い＝初めて整えるかけら。そのときだけ英単語を数える
+      for (let i = 0; i < rows.length; i++) await settle([rows[i]], [vecs[i]], !rows[i].lens);
+      done += rows.length;
     }
   } catch (e) { console.error(e); }
-  finally { if (modelReady) $('model').textContent = ''; }
+  finally {
+    if (modelReady) $('model').textContent = '';
+    if (done) { loadStrata(true).catch(() => {}); loadWord(); }
+  }
+}
+
+// 意味を保存し、レンズを見分け、（初回だけ）英単語を拾う
+async function settle(rows, vecs, bump) {
+  const protos = await loadProtos(embed).catch(() => null);
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const lens = classify(row, vecs[i], protos);
+    await store.setEmbedding(row.id, vecs[i], lens);
+    row.lens = lens;
+    for (const list of [strata]) for (const r of list) if (r.id === row.id) r.lens = lens;
+    if (!bump) continue;
+    try {
+      if (row.source === 'gmail' || row.source === 'yahoo') await store.bumpWords(wordsFromMail(row.body), 'mail', row.id);
+      else if (lens === 'word') { await store.bumpWords(wordsFromMine(row.body), 'mine', row.id); loadWord(); }
+    } catch (e) { console.error(e); }
+  }
+}
+
+// ---- レンズ ----
+function renderLenses() {
+  $('lenses').innerHTML = [{ id: null, label: 'すべて' }, ...LENSES].map((l) =>
+    `<button class="chip" data-lens="${l.id || ''}" aria-pressed="${curLens === l.id}">${l.label}</button>`).join('');
+}
+function setLens(id) {
+  curLens = id || null;
+  renderLenses();
+  loadStrata(true).catch(fail);
+  onSearchInput();
+}
+
+// ---- 今日の英単語 ----
+const ymd = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+const today = () => ymd(new Date());
+const later = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return ymd(d); };
+const GAPS = [1, 3, 7, 14, 30];
+let wordNow = null, wordLoading = false;
+
+function sentencesWith(body, word) {
+  const re = new RegExp(`\\b${word}(s|es|ed|d|ing)?\\b`, 'i');
+  return body.replace(/^【[^】]*】[^\n]*\n*/, '').split(/(?<=[.!?。！？])\s+|\n+/)
+    .map((x) => x.trim()).filter((x) => x.length >= 12 && re.test(x));
+}
+const mark = (text, word) => esc(text.length > 220 ? text.slice(0, 220) + '…' : text)
+  .replace(new RegExp(`\\b(${word}(?:s|es|ed|d|ing)?)\\b`, 'ig'), '<mark>$1</mark>');
+
+async function loadWord() {
+  if (wordLoading) return;
+  wordLoading = true;
+  try {
+    const t = today();
+    const { w, answered } = await store.wordOfDay(t);
+    $('wordday').hidden = false;
+    if (!w) {
+      wordNow = null;
+      $('wordBox').innerHTML = '<p class="empty">まだ湧いてくる単語がない。英単語を投げるか、メルマガが溜まるのを待ってね。</p>';
+      return;
+    }
+    if (w.last_seen !== t) await store.touchWord(w.word, { last_seen: t });   // 今日の1語に決める（PCとスマホで同じ語になる）
+    wordNow = w;
+    const ex = [];
+    for (const r of await store.examples(w.word)) {
+      for (const sen of sentencesWith(r.body, w.word)) { if (!ex.some((e) => e.s === sen)) ex.push({ s: sen, r }); if (ex.length >= 3) break; }
+      if (ex.length >= 3) break;
+    }
+    const mine = w.origin === 'mine' && w.kakera_id ? await store.kakera(w.kakera_id) : null;
+    const meta = w.origin === 'mine' ? '自分で投げた単語' : `メルマガで ${w.freq} 回`;
+    const again = w.step > 0 ? ` · ${w.step + 1} 回目` : '';
+    $('wordBox').innerHTML = `<div class="wd-word">${esc(w.word)}</div><p class="wd-meta">${meta}${again}</p>`
+      + (mine ? `<div class="wd-mine">${card(mine)}</div>` : '')
+      + (ex.length ? `<ul class="wd-ex">${ex.map((e) => `<li>${mark(e.s, w.word)}<span class="d">${dlabel(e.r.created_at)}</span></li>`).join('')}</ul>`
+        : '<p class="empty small-empty">メルマガの中の例文はまだない。</p>')
+      + (answered
+        ? `<p class="wd-done">${w.status === 'known' ? '卒業！かけらは検索にずっと残るよ。' : `また ${GAPS[Math.min(w.step - 1, GAPS.length - 1)]} 日後に湧いてくる。`}今日の1語はおしまい。</p>`
+        : '<div class="row wd-btns"><button class="ghost" id="wKnow">知ってる</button><button class="throw" id="wAgain">まだ</button></div>');
+  } catch (e) { console.error(e); $('wordday').hidden = true; }
+  finally { wordLoading = false; }
+}
+async function answerWord(knowIt) {
+  const w = wordNow; if (!w) return;
+  const patch = knowIt ? { status: 'known' } : { step: w.step + 1, due: later(GAPS[Math.min(w.step, GAPS.length - 1)]) };
+  try { await store.touchWord(w.word, patch); await loadWord(); } catch (e) { fail(e); }
 }
 
 // ---- 入口 ----
@@ -258,9 +350,15 @@ async function showApp(session) {
   if (demo) {
     const S = [[0, 'accrual って発生主義のことか。メルマガの記事で出てきて、会計の勉強とつながった'], [0, '今日は朝から会議続きでしんどかった。夕方の散歩で少し戻った'], [2, '研修メモ：監基報240、職業的懐疑心の話がかなり多かった。経営者への質問も増えそう'], [5, 'Read an article on fraud risk assessment: auditors should revisit the risk of material misstatement due to fraud every year.'], [9, '仕訳の練習。前払費用と未払費用、時間のずれをどっちに置くかで混乱する'], [14, '"skepticism" の発音、スケプティシズム。'], [21, 'Felt foggy all day, maybe the weather. A short walk always helps on tough days.'], [30, '収益認識の5ステップ、契約の識別から。']];
     await store.insert(S.map(([d, body], i) => ({ body, group_id: crypto.randomUUID(), created_at: new Date(Date.now() - d * DAY - i * 36e5).toISOString() })));
+    const M = ['【Audit Weekly】Fraud and estimates\n\nRegulators found that auditors often fail to challenge management estimates. Professional skepticism means questioning the assumptions behind each estimate.',
+      '【Audit Weekly】Revenue\n\nMany restatements come from revenue recognition errors. Auditors should challenge unusual journal entries near period end, and keep skepticism about side agreements.',
+      '【会計ニュース】リース\n\n新しいリース会計基準では、借手はほぼすべてのリースを貸借対照表に計上する。'];
+    await store.insert(M.map((body, i) => ({ body, source: 'gmail', group_id: crypto.randomUUID(), created_at: new Date(Date.now() - (i + 1) * DAY).toISOString() })));
   }
   embed(null).catch(() => {}); // モデルを先に温める
+  renderLenses();
   try { await loadStrata(true); } catch (e) { fail(e); }
+  loadWord();
   backfill();
 }
 
@@ -284,6 +382,9 @@ $('undo').addEventListener('click', async () => {
 document.addEventListener('click', async (e) => {
   const k = e.target.closest('.k, .fold'); if (k) { openSheet(k.dataset.id); return; }
   if (e.target.id === 'close') { closeSheet(); return; }
+  const chip = e.target.closest('.chip'); if (chip) { setLens(chip.dataset.lens); return; }
+  if (e.target.id === 'wKnow') { answerWord(true); return; }
+  if (e.target.id === 'wAgain') { answerWord(false); return; }
   if (e.target.id === 'edit') { startEdit(); return; }
   if (e.target.id === 'editCancel') { cancelEdit(); return; }
   if (e.target.id === 'editSave') { saveEdit(e.target.dataset.id); return; }

@@ -49,14 +49,19 @@
       <div class="ripple" id="ripple" aria-live="polite"></div>
       <p class="model" id="model" aria-live="polite"></p>
     </section>
+    <section class="band wordday" id="wordday" hidden>
+      <h2>今日の英単語</h2>
+      <div id="wordBox"></div>
+    </section>
     <section class="band">
       <h2>泉を探す</h2>
+      <div class="lenses" id="lenses" role="group" aria-label="レンズ"></div>
       <input type="search" id="q" placeholder="例：240の改正、発生主義、しんどい" enterkeyhint="search">
       <div id="results" style="margin-top:14px"></div>
     </section>
   </div>
   <section class="band strata">
-    <h2>積もったかけら</h2>
+    <h2 id="strataTitle">積もったかけら</h2>
     <div id="strata"></div>
     <button class="ghost more" id="more" hidden>もっと昔を掘る</button>
     <p class="foot"><span id="who"></span><button class="ghost small" id="logout">出る</button></p>

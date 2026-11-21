@@ -80,3 +80,17 @@ button:disabled{opacity:.55;cursor:default}
 .gate-msg{font-size:14px;color:#ffd2c4;min-height:1.4em}
 .editbox{margin:6px 0 18px}.editbox textarea{min-height:160px}.editbox .throw{margin-left:auto}
 .fold{min-height:36px;margin-top:-4px;justify-self:start;background:transparent;color:var(--mute);font-size:13px;padding:0 12px;border:1px dashed var(--line)}
+.lenses{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}
+.chip{min-height:36px;padding:0 14px;font-size:14px;background:var(--card);border:1.5px solid var(--line);color:var(--ink)}
+.chip[aria-pressed=true]{background:var(--deep);border-color:var(--deep);color:#f2fbfa}
+.wordday{border-bottom:1px solid var(--line)}
+.wd-word{font:700 clamp(30px,6vw,40px)/1.1 "Zen Maru Gothic",sans-serif;letter-spacing:.01em;overflow-wrap:anywhere}
+.wd-meta{margin:6px 0 12px;color:var(--mute);font-size:13px}
+.wd-mine{margin-bottom:10px}
+.wd-ex{list-style:none;margin:0 0 12px;padding:0;display:grid;gap:8px}
+.wd-ex li{background:var(--card);border-left:3px solid var(--aqua);border-radius:6px 12px 12px 6px;padding:10px 12px;font-size:15px;overflow-wrap:anywhere}
+.wd-ex .d{display:block;font-size:12px;color:var(--mute);margin-top:4px}
+.wd-ex mark{background:color-mix(in oklab,var(--coral) 35%,transparent);color:inherit;border-radius:3px;padding:0 2px}
+.wd-btns .throw{margin-left:0}
+.wd-done{color:var(--mute);font-size:14px;margin:4px 0 0}
+.small-empty{font-size:13px}
