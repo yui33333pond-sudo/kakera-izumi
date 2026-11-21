@@ -45,9 +45,13 @@
       <p class="sub">タイトルも置き場所も決めなくていい。投げるだけ。</p>
       <label for="inp" class="hint" style="display:block;margin-bottom:6px">思いついたこと、読んだこと、今日のこと</label>
       <textarea id="inp" placeholder="例：accrual って発生主義のことか。メルマガで出てきた"></textarea>
-      <div class="row"><span class="hint" id="kbdHint">⌘/Ctrl + Enter でも投げられる</span><button class="throw" id="throw">投げる</button></div>
+      <div class="row"><span class="hint" id="kbdHint">⌘/Ctrl + Enter でも投げられる</span><button class="pintoggle" id="pinThrow" aria-pressed="false" title="ピンして投げる">📌 ピンして</button><button class="throw" id="throw">投げる</button></div>
       <div class="ripple" id="ripple" aria-live="polite"></div>
       <p class="model" id="model" aria-live="polite"></p>
+    </section>
+    <section class="band pins" id="pins" hidden>
+      <h2>ピン</h2>
+      <div class="stack" id="pinList"></div>
     </section>
     <section class="band wordday" id="wordday" hidden>
       <h2>今日の英単語</h2>

@@ -1,6 +1,6 @@
 // データの出し入れ。本番は Supabase、?demo を付けて開くとブラウザ内だけの試し用。
 
-const COLS = 'id, body, created_at, group_id, seq, source, lens';
+const COLS = 'id, body, created_at, group_id, seq, source, lens, pinned_at';
 
 export function supabaseStore(sb) {
   const must = ({ data, error }) => { if (error) throw error; return data; };
@@ -25,6 +25,12 @@ export function supabaseStore(sb) {
       if (before) q = q.lt('created_at', before);
       if (lens) q = q.eq('lens', lens);
       return must(await q);
+    },
+    async pins() {
+      return must(await sb.from('kakera').select(COLS).not('pinned_at', 'is', null).order('pinned_at', { ascending: false }).limit(50));
+    },
+    async setPin(id, on) {
+      must(await sb.from('kakera').update({ pinned_at: on ? new Date().toISOString() : null }).eq('id', id));
     },
     async siblings(groupId) {
       return must(await sb.from('kakera').select(COLS).eq('group_id', groupId).order('seq'));
@@ -75,7 +81,7 @@ export function memoryStore() {
   let rows = [];
   const dot = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * b[i]; return s; };
   let words = [];
-  const pub = ({ id, body, created_at, group_id, seq, source, lens }) => ({ id, body, created_at, group_id, seq, source, lens });
+  const pub = ({ id, body, created_at, group_id, seq, source, lens, pinned_at }) => ({ id, body, created_at, group_id, seq, source, lens, pinned_at: pinned_at || null });
   const near = (vec, n, ex) => rows.filter((r) => r.embedding && r.group_id !== ex)
     .map((r) => ({ ...pub(r), similarity: dot(vec, r.embedding) }))
     .sort((a, b) => b.similarity - a.similarity).slice(0, n);
@@ -94,6 +100,8 @@ export function memoryStore() {
       return rows.filter((r) => (!before || r.created_at < before) && (!lens || r.lens === lens))
         .sort((a, b) => b.created_at.localeCompare(a.created_at) || a.seq - b.seq).slice(0, limit).map(pub);
     },
+    async pins() { return rows.filter((r) => r.pinned_at).sort((a, b) => b.pinned_at.localeCompare(a.pinned_at)).map(pub); },
+    async setPin(id, on) { const r = rows.find((x) => x.id === id); if (r) r.pinned_at = on ? new Date().toISOString() : null; },
     async siblings(g) { return rows.filter((r) => r.group_id === g).sort((a, b) => a.seq - b.seq).map(pub); },
     async match(vec, n, ex) { return near(vec, n, ex); },
     async related(id, n) { const t = rows.find((r) => r.id === id); return t && t.embedding ? near(t.embedding, n, t.group_id) : []; },

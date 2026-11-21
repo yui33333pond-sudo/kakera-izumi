@@ -81,7 +81,7 @@ const dlabel = (iso) => {
 };
 const dkey = (iso) => { const d = new Date(iso); return d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate(); };
 const known = new Map(); // id -> row（開くときに使う）
-const tag = (it) => [it.source === 'gmail' || it.source === 'yahoo' ? 'メルマガ' : '', lensLabel(it.lens)].filter(Boolean).map((t) => ' · ' + t).join('');
+const tag = (it) => [it.pinned_at ? '📌' : '', it.source === 'gmail' || it.source === 'yahoo' ? 'メルマガ' : '', lensLabel(it.lens)].filter(Boolean).map((t) => ' · ' + t).join('');
 const card = (it, cls = '') => { known.set(it.id, it); return `<button class="k ${cls}" data-id="${it.id}"><span class="d">${dlabel(it.created_at)}${tag(it)}</span><span class="clip">${esc(it.body)}</span></button>`; };
 
 let toastTimer = 0, lastDel = null;
@@ -137,7 +137,9 @@ async function throwIt() {
     const group_id = crypto.randomUUID();
     const now = new Date().toISOString();
     // 先に文字だけ沈める（モデルの準備がまだでも消えない）
-    const rows = await store.insert(paras.map((body, seq) => ({ body, seq, group_id, created_at: now })));
+    const pin = $('pinThrow').getAttribute('aria-pressed') === 'true';
+    const rows = await store.insert(paras.map((body, seq) => ({ body, seq, group_id, created_at: now, ...(pin ? { pinned_at: now } : {}) })));
+    if (pin) { $('pinThrow').setAttribute('aria-pressed', 'false'); loadPins(); }
     rows.sort((a, b) => a.seq - b.seq);
     $('inp').value = '';
     if (!curLens) { strata.unshift(...rows); renderStrata(); }
@@ -195,19 +197,30 @@ function claudePrompt() {
 }
 
 // ---- 開く（糸の先） ----
-async function openSheet(id) {
+// 開いた順に積んでおき、「戻る」で前のかけらへ
+let sheetStack = [];
+async function openSheet(id, { push = true } = {}) {
   const it = known.get(id); if (!it) return;
-  $('panel').innerHTML = `<span class="d" style="color:var(--mute);font-size:13px">${dlabel(it.created_at)}</span><div class="full" id="full">${esc(it.body)}</div><div class="editbox" id="editbox" hidden><textarea id="editText" aria-label="かけらを直す"></textarea><div class="prow"><button class="ghost" id="editCancel">やめる</button><button class="throw" id="editSave" data-id="${id}">直して沈める</button></div></div><div id="sibs"></div><h2>糸の先</h2><div class="stack" id="threads"><p class="empty">糸をたぐってる…</p></div><div class="prow"><button class="ghost" id="close">閉じる</button><button class="ghost" id="edit">直す</button><button class="del" id="del" data-id="${id}">このかけらを消す</button></div>`;
-  $('sheet').classList.add('on');
+  if (push) { if (sheetStack[sheetStack.length - 1] !== id) sheetStack.push(id); }
+  const canBack = sheetStack.length > 1;
+  $('panel').innerHTML = `<div class="sbar">`
+    + (canBack ? `<button class="ghost small" id="back">‹ 戻る</button>` : '')
+    + `<span class="d">${dlabel(it.created_at)}${tag(it)}</span>`
+    + `<button class="ghost small" id="pinBtn" data-id="${id}" aria-pressed="${!!it.pinned_at}">${it.pinned_at ? '📌 外す' : '📌 ピン'}</button>`
+    + `<button class="ghost small" id="edit">直す</button><button class="ghost small" id="close" aria-label="閉じる">閉じる ✕</button></div>`
+    + `<div class="sbody"><div class="full" id="full">${esc(it.body)}</div><div class="editbox" id="editbox" hidden><textarea id="editText" aria-label="かけらを直す"></textarea><div class="prow"><button class="ghost" id="editCancel">やめる</button><button class="throw" id="editSave" data-id="${id}">直して沈める</button></div></div><div id="sibs"></div><h2>糸の先</h2><div class="stack" id="threads"><p class="empty">糸をたぐってる…</p></div><div class="prow"><button class="del" id="del" data-id="${id}">このかけらを消す</button></div></div>`;
+  $('panel').scrollTop = 0;
+  if (!$('sheet').classList.contains('on')) { $('sheet').classList.add('on'); document.body.classList.add('locked'); }
   try {
     const [sibs, rel] = await Promise.all([store.siblings(it.group_id), store.related(id, 3)]);
-    if (!$('threads')) return;
+    if (!$('threads') || sheetStack[sheetStack.length - 1] !== id) return;  // その間に別のかけらを開いていたら捨てる
     if (sibs.length > 1) $('sibs').innerHTML = `<h2>同じとき投げた段落</h2><div class="stack">${sibs.map((s) => card(s, 'sib' + (s.id === id ? ' cur' : ''))).join('')}</div>`;
     const good = rel.filter((r) => r.similarity >= THREAD_MIN);
     $('threads').innerHTML = good.length ? good.map((r) => card(r)).join('') : '<p class="empty">まだ糸はつながってない。</p>';
   } catch (e) { fail(e); }
 }
-const closeSheet = () => $('sheet').classList.remove('on');
+const closeSheet = () => { $('sheet').classList.remove('on'); document.body.classList.remove('locked'); sheetStack = []; };
+const backSheet = () => { sheetStack.pop(); const prev = sheetStack[sheetStack.length - 1]; prev ? openSheet(prev, { push: false }) : closeSheet(); };
 
 // ---- 直す ----
 function startEdit() {
@@ -227,11 +240,11 @@ async function saveEdit(id) {
     for (const list of [strata, hits]) for (const r of list) if (r.id === id) r.body = body;
     it.body = body; renderStrata();
     if (hits.length) renderResults();
-    openSheet(id);
+    openSheet(id, { push: false });
     toast('直した');
     const [v] = await embed([body]);
     await settle([it], [v], false);
-    if ($('sheet').classList.contains('on')) openSheet(id); // 糸の先を新しい中身で引き直す
+    if ($('sheet').classList.contains('on') && sheetStack[sheetStack.length - 1] === id) openSheet(id, { push: false }); // 糸の先を新しい中身で引き直す
   } catch (e) { fail(e); $('editSave') && ($('editSave').disabled = false); }
 }
 
@@ -270,6 +283,24 @@ async function settle(rows, vecs, bump) {
       else if (lens === 'word') { await store.bumpWords(wordsFromMine(row.body), 'mine', row.id); loadWord(); }
     } catch (e) { console.error(e); }
   }
+}
+
+// ---- ピン ----
+let pins = [];
+async function loadPins() {
+  try { pins = await store.pins(); } catch (e) { console.error(e); pins = []; }
+  $('pins').hidden = !pins.length;
+  $('pinList').innerHTML = pins.map((p) => `<div class="pinrow">${card(p)}<button class="ghost small done" data-unpin="${p.id}" aria-label="ピンを外す">済んだ</button></div>`).join('');
+}
+async function togglePin(id, on) {
+  try {
+    await store.setPin(id, on);
+    const at = on ? new Date().toISOString() : null;
+    for (const r of [...strata, ...hits, known.get(id)].filter(Boolean)) if (r.id === id) r.pinned_at = at;
+    renderStrata(); await loadPins();
+    if ($('sheet').classList.contains('on') && sheetStack[sheetStack.length - 1] === id) openSheet(id, { push: false });
+    toast(on ? 'ピンした' : 'ピンを外した');
+  } catch (e) { fail(e); }
 }
 
 // ---- レンズ ----
@@ -381,6 +412,7 @@ async function showApp(session) {
   }
   embed(null).catch(() => {}); // モデルを先に温める
   renderLenses();
+  loadPins();
   try { await loadStrata(true); } catch (e) { fail(e); }
   loadWord();
   backfill();
@@ -406,6 +438,10 @@ $('undo').addEventListener('click', async () => {
 document.addEventListener('click', async (e) => {
   const k = e.target.closest('.k, .fold'); if (k) { openSheet(k.dataset.id); return; }
   if (e.target.id === 'close') { closeSheet(); return; }
+  if (e.target.id === 'back') { backSheet(); return; }
+  if (e.target.id === 'pinBtn') { togglePin(e.target.dataset.id, e.target.getAttribute('aria-pressed') !== 'true'); return; }
+  if (e.target.dataset.unpin) { togglePin(e.target.dataset.unpin, false); return; }
+  if (e.target.id === 'pinThrow') { e.target.setAttribute('aria-pressed', String(e.target.getAttribute('aria-pressed') !== 'true')); return; }
   const chip = e.target.closest('.chip'); if (chip) { setLens(chip.dataset.lens); return; }
   if (e.target.id === 'wKnow') { answerWord(true); return; }
   if (e.target.id === 'wAgain') { answerWord(false); return; }
@@ -421,7 +457,7 @@ document.addEventListener('click', async (e) => {
     const id = e.target.dataset.id;
     try {
       lastDel = await store.remove(id);
-      strata = strata.filter((r) => r.id !== id); renderStrata();
+      strata = strata.filter((r) => r.id !== id); renderStrata(); loadPins();
       hits = hits.filter((r) => r.id !== id); if (hits.length || $('q').value.trim()) renderResults();
       closeSheet(); toast('かけらを消した', true);
     } catch (err) { fail(err); }
