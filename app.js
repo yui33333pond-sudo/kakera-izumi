@@ -1,12 +1,12 @@
 import { supabaseStore, memoryStore } from './store.js';
 import { lookup } from './dict.js';
-import { LENSES, lensLabel, loadProtos, classify, wordsFromMine, wordsFromMail } from './lens.js';
+import { LENSES, lensLabel, loadProtos, classify, wordsFromMine, wordsFromMail, KINDS, kindOf, mostlyEnglish } from './lens.js';
 
 // ---- 調整つまみ（関係ない文どうしは 0.1〜0.3、近い話は 0.4 以上になりやすい） ----
 const RIPPLE_MIN = 0.40;   // 波紋に出す近さ
 const THREAD_MIN = 0.36;   // 糸の先に出す近さ
 const SEARCH_MIN = 0.30;   // 探すときに出す近さ（文字が含まれていれば常に出す）
-const PAGE = 200;
+const RECENT_DAYS = 3;  // 地層に出すのは最近の数日だけ。それより前は底に沈む（探したときと湧いてきたときだけ出る）
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -71,18 +71,27 @@ function splitParas(text) {
 }
 
 // ---- 表示まわり ----
-const dlabel = (iso) => {
-  const a = new Date(); a.setHours(0, 0, 0, 0);
-  const d = new Date(iso); d.setHours(0, 0, 0, 0);
-  const diff = Math.round((a - d) / DAY);
-  if (diff === 0) return '今日';
-  if (diff === 1) return '昨日';
-  return (d.getFullYear() !== a.getFullYear() ? d.getFullYear() + '年' : '') + (d.getMonth() + 1) + '月' + d.getDate() + '日';
-};
+const pad = (n) => String(n).padStart(2, '0');
+const dlabel = (iso) => { const d = new Date(iso); return d.getFullYear() + '/' + pad(d.getMonth() + 1) + '/' + pad(d.getDate()); };
+const dayStart = (t) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
+const relDay = (iso) => { const n = Math.round((dayStart(Date.now()) - dayStart(iso)) / DAY); return n === 0 ? '（今日）' : n === 1 ? '（昨日）' : ''; };
 const dkey = (iso) => { const d = new Date(iso); return d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate(); };
 const known = new Map(); // id -> row（開くときに使う）
-const tag = (it) => [it.pinned_at ? '📌' : '', it.source === 'gmail' || it.source === 'yahoo' ? 'メルマガ' : '', lensLabel(it.lens)].filter(Boolean).map((t) => ' · ' + t).join('');
-const card = (it, cls = '') => { known.set(it.id, it); return `<button class="k ${cls}" data-id="${it.id}"><span class="d">${dlabel(it.created_at)}${tag(it)}</span><span class="clip">${esc(it.body)}</span></button>`; };
+const tag = (it) => [it.pinned_at ? '📌' : '', it.source === 'gmail' || it.source === 'yahoo' ? 'メルマガ' : ''].filter(Boolean).map((t) => ' · ' + t).join('');
+// 英単語と数字を強調（ほぼ英語のかけらは数字だけ）
+const EM_WORDS = /([A-Za-z][A-Za-z'’-]{2,}(?:\s+[A-Za-z][A-Za-z'’-]{2,})*|\d+(?:[.,:/]\d+)*)/;
+const EM_NUMS = /(\d+(?:[.,:/]\d+)*)/;
+const emph = (str, re) => String(str).split(re).map((x, i) => (i % 2 ? `<b class="em">${esc(x)}</b>` : esc(x))).join('');
+// 1文目（句点・コロン・改行まで、48字以内）を見出しに
+const HEAD = /^([^。：:！!？?\n]{1,48}[。：:！!？?\n])([\s\S]+)$/;
+const shape = (k) => `<svg class="sh" viewBox="0 0 11 11" aria-hidden="true">${KINDS[k][1]}</svg>`;
+const card = (it, cls = '') => {
+  known.set(it.id, it);
+  const k = kindOf(it), re = mostlyEnglish(it.body) ? EM_NUMS : EM_WORDS;
+  const m = it.body.match(HEAD), head = (m ? m[1] : it.body).trim(), rest = m ? m[2].trim() : '';
+  return `<button class="k kd-${k} ${cls}" data-id="${it.id}"><span class="d">${shape(k)}<span class="kl">${KINDS[k][0]}</span>${dlabel(it.created_at)}${tag(it)}</span>`
+    + `<span class="h1">${emph(head, re)}</span>${rest ? `<span class="rest clip">${emph(rest, re)}</span>` : ''}</button>`;
+};
 
 let toastTimer = 0, lastDel = null;
 function toast(msg, undo = false) {
@@ -94,18 +103,17 @@ function toast(msg, undo = false) {
 const fail = (e) => { console.error(e); toast('うまくいかなかった：' + (e.message || e)); };
 
 // ---- 地層 ----
-let strata = [], oldest = null, curLens = null;
-async function loadStrata(reset) {
-  if (reset) { strata = []; oldest = null; }
-  const rows = await store.recent(oldest, PAGE, curLens);
-  strata.push(...rows);
-  if (rows.length) oldest = rows[rows.length - 1].created_at;
-  $('more').hidden = rows.length < PAGE;
+let strata = [], sunk = false, curLens = null;
+async function loadStrata() {
+  const since = new Date(dayStart(Date.now()) - (RECENT_DAYS - 1) * DAY).toISOString();
+  const [rows, older] = await Promise.all([store.recent(null, 1000, curLens, since), store.recent(since, 1, curLens)]);
+  strata = rows; sunk = older.length > 0;
   renderStrata();
 }
 function renderStrata() {
-  $('strataTitle').textContent = curLens ? `積もったかけら（${lensLabel(curLens)}）` : '積もったかけら';
-  if (!strata.length) { $('strata').innerHTML = curLens ? '<p class="empty">このレンズのかけらはまだない。</p>' : '<p class="empty">まだ何も沈んでない。上から投げてみて。</p>'; return; }
+  $('strataTitle').textContent = curLens ? `最近のかけら（${lensLabel(curLens)}）` : '最近のかけら';
+  const sunkNote = sunk ? '<div class="sunk"><div class="bar"></div><p>それより前のかけらは底に沈んでる。探したときと、湧いてきたときにだけ出てくるよ。</p></div>' : '';
+  if (!strata.length) { $('strata').innerHTML = (curLens ? '<p class="empty">この数日、このレンズのかけらはない。</p>' : '<p class="empty">この数日はまだ何も投げてない。</p>') + sunkNote; return; }
   const groups = []; let cur = null;
   for (const it of strata) {
     const k = dkey(it.created_at);
@@ -121,8 +129,8 @@ function renderStrata() {
     }
     const cards = runs.map((run) => run.slice(0, 2).map((it, j) => card(it, j ? 'chain' : '')).join('')
       + (run.length > 2 ? `<button class="fold" data-id="${run[0].id}">…ほか ${run.length - 2} 段落</button>` : '')).join('');
-    return `<div class="layer" style="--p:${Math.min(20 + i * 14, 100)}%"><div class="bar"></div><div><h3>${dlabel(g.t)}</h3><div class="list">${cards}</div></div></div>`;
-  }).join('');
+    return `<div class="layer" style="--p:${Math.min(20 + i * 25, 100)}%"><div class="bar"></div><div><h3>${dlabel(g.t)}${relDay(g.t)}</h3><div class="list">${cards}</div></div></div>`;
+  }).join('') + sunkNote;
 }
 
 // ---- 投げる ----
@@ -205,10 +213,12 @@ async function openSheet(id, { push = true } = {}) {
   const canBack = sheetStack.length > 1;
   $('panel').innerHTML = `<div class="sbar">`
     + (canBack ? `<button class="ghost small" id="back">‹ 戻る</button>` : '')
-    + `<span class="d">${dlabel(it.created_at)}${tag(it)}</span>`
+    + `<span class="d">${KINDS[kindOf(it)][0]} · ${dlabel(it.created_at)}${tag(it)}</span>`
     + `<button class="ghost small" id="pinBtn" data-id="${id}" aria-pressed="${!!it.pinned_at}">${it.pinned_at ? '📌 外す' : '📌 ピン'}</button>`
     + `<button class="ghost small" id="edit">直す</button><button class="ghost small" id="close" aria-label="閉じる">閉じる ✕</button></div>`
-    + `<div class="sbody"><div class="full" id="full">${esc(it.body)}</div><div class="editbox" id="editbox" hidden><textarea id="editText" aria-label="かけらを直す"></textarea><div class="prow"><button class="ghost" id="editCancel">やめる</button><button class="throw" id="editSave" data-id="${id}">直して沈める</button></div></div><div id="sibs"></div><h2>糸の先</h2><div class="stack" id="threads"><p class="empty">糸をたぐってる…</p></div><div class="prow"><button class="del" id="del" data-id="${id}">このかけらを消す</button></div></div>`;
+    + `<div class="sbody"><div class="full" id="full">${esc(it.body)}</div>`
+    + (kindOf(it) === 'u' ? `<div class="prow" style="margin:-8px 0 14px"><button class="ghost small" id="resolve" data-id="${id}">◆ 解決した</button></div>` : '')
+    + `<div class="editbox" id="editbox" hidden><textarea id="editText" aria-label="かけらを直す"></textarea><div class="prow"><button class="ghost" id="editCancel">やめる</button><button class="throw" id="editSave" data-id="${id}">直して沈める</button></div></div><div id="sibs"></div><h2>糸の先</h2><div class="stack" id="threads"><p class="empty">糸をたぐってる…</p></div><div class="prow"><button class="del" id="del" data-id="${id}">このかけらを消す</button></div></div>`;
   $('panel').scrollTop = 0;
   if (!$('sheet').classList.contains('on')) { $('sheet').classList.add('on'); document.body.classList.add('locked'); }
   try {
@@ -264,7 +274,7 @@ async function backfill() {
   } catch (e) { console.error(e); }
   finally {
     if (modelReady) $('model').textContent = '';
-    if (done) { loadStrata(true).catch(() => {}); loadWord(); }
+    if (done) { loadStrata().catch(() => {}); loadWord(); }
   }
 }
 
@@ -283,6 +293,18 @@ async function settle(rows, vecs, bump) {
       else if (lens === 'word') { await store.bumpWords(wordsFromMine(row.body), 'mine', row.id); loadWord(); }
     } catch (e) { console.error(e); }
   }
+}
+
+// ---- 未解決 → 解決した ----
+async function resolveIt(id) {
+  try {
+    await store.setResolved(id);
+    const at = new Date().toISOString();
+    for (const r of [...strata, ...hits, ...pins, known.get(id)].filter(Boolean)) if (r.id === id) r.resolved_at = at;
+    renderStrata(); if (hits.length) renderResults(); loadPins();
+    openSheet(id, { push: false });
+    toast('解決した');
+  } catch (e) { fail(e); }
 }
 
 // ---- ピン ----
@@ -311,7 +333,7 @@ function renderLenses() {
 function setLens(id) {
   curLens = id || null;
   renderLenses();
-  loadStrata(true).catch(fail);
+  loadStrata().catch(fail);
   onSearchInput();
 }
 
@@ -413,7 +435,7 @@ async function showApp(session) {
   embed(null).catch(() => {}); // モデルを先に温める
   renderLenses();
   loadPins();
-  try { await loadStrata(true); } catch (e) { fail(e); }
+  try { await loadStrata(); } catch (e) { fail(e); }
   loadWord();
   backfill();
 }
@@ -422,7 +444,6 @@ $('throw').addEventListener('click', throwIt);
 $('inp').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); throwIt(); } });
 if (matchMedia('(pointer:coarse)').matches) $('kbdHint').textContent = '';
 $('q').addEventListener('input', onSearchInput);
-$('more').addEventListener('click', () => loadStrata(false).catch(fail));
 $('logout').addEventListener('click', async () => { await store.signOut(); location.reload(); });
 $('sheet').addEventListener('click', (e) => { if (e.target.id === 'sheet') closeSheet(); });
 document.addEventListener('keydown', (e) => {
@@ -433,12 +454,13 @@ $('undo').addEventListener('click', async () => {
   $('toast').classList.remove('on');
   if (!lastDel) return;
   const row = lastDel; lastDel = null;
-  try { await store.restore([row]); await loadStrata(true); } catch (e) { fail(e); }
+  try { await store.restore([row]); await loadStrata(); } catch (e) { fail(e); }
 });
 document.addEventListener('click', async (e) => {
   const k = e.target.closest('.k, .fold'); if (k) { openSheet(k.dataset.id); return; }
   if (e.target.id === 'close') { closeSheet(); return; }
   if (e.target.id === 'back') { backSheet(); return; }
+  if (e.target.id === 'resolve') { resolveIt(e.target.dataset.id); return; }
   if (e.target.id === 'pinBtn') { togglePin(e.target.dataset.id, e.target.getAttribute('aria-pressed') !== 'true'); return; }
   if (e.target.dataset.unpin) { togglePin(e.target.dataset.unpin, false); return; }
   if (e.target.id === 'pinThrow') { e.target.setAttribute('aria-pressed', String(e.target.getAttribute('aria-pressed') !== 'true')); return; }

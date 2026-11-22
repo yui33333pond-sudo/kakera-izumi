@@ -1,5 +1,7 @@
 # かけらの泉
 
+仕様と段階ごとの予定は [SPEC.md](SPEC.md)。
+
 投げるだけのメモ。つなぐのは機械。
 
 - 意味の近さは **端末の中で動く無料モデル**（paraphrase-multilingual-MiniLM-L12-v2）で計算。外部の有料APIは使わない。
@@ -117,6 +119,7 @@ Settings → Pages → Branch: `main` / `(root)` で公開。PCでもスマホ�
 | `supabase/02_ingest.sql` | 取り込み専用の鍵と取り込み口 |
 | `supabase/03_lens_words.sql` | レンズの列、英単語の表 |
 | `supabase/04_pin.sql` | ピンの列 |
+| `supabase/05_kinds.sql` | 未解決の「解決した」、探した結果にも種類を載せる |
 | `lens.js` | レンズの見分けと英単語の拾い出し |
 | `dict.js` | 英和辞書（[EJDict](https://github.com/kujirahand/EJDict)・CC0）を引く |
 | `gas/gmail-watcher.gs` | Gmail の見張り番と「泉行き」の一括取り込み（Apps Script） |

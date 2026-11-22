@@ -99,3 +99,26 @@ about above across action activity actually add added addition address after aga
 week weekly month monthly today tomorrow yesterday click link here subscribe newsletter email read more view online browser privacy unsubscribe copyright rights reserved update updates new latest issue team welcome thanks thank regards dear hello
 also able across added adding allows almost along already announce announced annual applied asked based began being called came cannot comes coming companies company's considered continued could created days didn't doesn't don't during early either else ended even every expected feel felt find first five found four gave gets getting goes going gone got great half having held help helps however i'm including into it's just keep kept known large last least less let's likely little long looking looks made make makes making many means might million more most much need needs next often once only other others ours part past people place plans put rather really right said saying says second seen sent shows since six small some still such sure take taken takes taking tell tells than that's them then there's things think third those though three through told took toward under until upon used uses using very want wants ways well went were what's where which while who's whole will with within won't work works worked would year years you're
 `.trim().split(/\s+/));
+
+// ---- かけらの種類（表示用）：申し送り・未解決・仕事・英語・日々 ----
+// 申し送り・未解決は、自分で投げたかけらだけ言葉で見分ける（あとで意味での判定に置き換える予定）
+const HAND = /次は|次回|今度は|ばよかった|忘れた|足りなかった|必須/;
+const UNRES = /あやしい|怪しい|わからない|分からない|要確認|\?|？/;
+const WORK = /監査|監基報|会計|仕訳|費用|収益|小切手|預金|棚卸|立会|リスク|カットオフ|発生主義|調書|不正|懐疑心|fraud|audit|revenue|inventory/i;
+export const KINDS = {
+  h: ['申し送り', '<polygon points="5.5,0 11,11 0,11"/>'],
+  u: ['未解決', '<polygon points="5.5,0 11,5.5 5.5,11 0,5.5"/>'],
+  w: ['仕事', '<rect width="11" height="11" rx="2"/>'],
+  e: ['英語', '<circle cx="5.5" cy="5.5" r="5.5"/>'],
+  d: ['日々', '<ellipse cx="5.5" cy="5.5" rx="3.6" ry="5.5" transform="rotate(35 5.5 5.5)"/>'],
+};
+export function kindOf(it) {
+  const mine = !it.source || it.source === 'hand';
+  if (mine && HAND.test(it.body)) return 'h';
+  if (mine && UNRES.test(it.body) && !it.resolved_at) return 'u';
+  if (it.lens === 'accounting') return 'w';
+  if (it.lens === 'word' || it.lens === 'article') return 'e';
+  if (it.lens === 'daily') return 'd';
+  return WORK.test(it.body) ? 'w' : stats(it.body).ratio >= 0.5 ? 'e' : 'd';
+}
+export const mostlyEnglish = (text) => stats(text).ratio >= 0.5;
