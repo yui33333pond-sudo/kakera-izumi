@@ -19,6 +19,15 @@ const PROTOS = {
     '今日の出来事と気分', '疲れた、眠い、散歩した', '週末の予定や食べたもの', '家族や友だちとの会話',
     '天気と体調のこと', '買い物と家のこと', 'I felt tired today and went for a walk', 'what I ate and how I slept',
   ],
+  // 申し送り（次の自分へのひとこと・反省）と、そうでない文
+  handoff: [
+    '次はこうしよう', '次回はここを先に確認する', 'もっと早くやればよかった', '忘れ物をした、次は持っていく',
+    '反省：準備が足りなかった', '次からは最初に資料をもらっておく', 'Next time I should check this first', 'I should have prepared earlier',
+  ],
+  nothand: [
+    '今日は会議が続いた', '発生主義の意味を覚えた', '牛乳と卵を買う', '記事を読んだ感想',
+    'この単語の意味', '天気がよくて散歩した', 'The article explains revenue recognition', '研修で習ったこと',
+  ],
 };
 let protoVecs = null;
 export async function loadProtos(embed) {
@@ -100,9 +109,19 @@ week weekly month monthly today tomorrow yesterday click link here subscribe new
 also able across added adding allows almost along already announce announced annual applied asked based began being called came cannot comes coming companies company's considered continued could created days didn't doesn't don't during early either else ended even every expected feel felt find first five found four gave gets getting goes going gone got great half having held help helps however i'm including into it's just keep kept known large last least less let's likely little long looking looks made make makes making many means might million more most much need needs next often once only other others ours part past people place plans put rather really right said saying says second seen sent shows since six small some still such sure take taken takes taking tell tells than that's them then there's things think third those though three through told took toward under until upon used uses using very want wants ways well went were what's where which while who's whole will with within won't work works worked would year years you're
 `.trim().split(/\s+/));
 
+// ---- 申し送り：反省っぽい・次の自分へのひとことを意味で見分ける（自分で投げた短いかけらだけ） ----
+const HINT = /次は|次回|今度は|ばよかった|忘れ|足りなかった|反省/;   // 決め手ではなく、迷ったときの後押しだけ
+export function isHandoff(row, vec, protos) {
+  if (!protos || !protos.handoff || !vec) return false;
+  if (row.source && row.source !== 'hand') return false;
+  const text = row.body.trim();
+  if (text.length > 300) return false;
+  const h = top2(vec, protos.handoff), d = h - top2(vec, protos.nothand);
+  return (h >= 0.45 && d >= 0.08) || (HINT.test(text) && h >= 0.40 && d >= 0);
+}
+
 // ---- かけらの種類（表示用）：申し送り・未解決・仕事・英語・日々 ----
-// 申し送り・未解決は、自分で投げたかけらだけ言葉で見分ける（あとで意味での判定に置き換える予定）
-const HAND = /次は|次回|今度は|ばよかった|忘れた|足りなかった|必須/;
+// 未解決は、自分で投げたかけらだけ言葉で見分ける
 const UNRES = /あやしい|怪しい|わからない|分からない|要確認|\?|？/;
 const WORK = /監査|監基報|会計|仕訳|費用|収益|小切手|預金|棚卸|立会|リスク|カットオフ|発生主義|調書|不正|懐疑心|fraud|audit|revenue|inventory/i;
 export const KINDS = {
@@ -114,7 +133,7 @@ export const KINDS = {
 };
 export function kindOf(it) {
   const mine = !it.source || it.source === 'hand';
-  if (mine && HAND.test(it.body)) return 'h';
+  if (it.handoff && !it.handoff_done_at) return 'h';
   if (mine && UNRES.test(it.body) && !it.resolved_at) return 'u';
   if (it.lens === 'accounting') return 'w';
   if (it.lens === 'word' || it.lens === 'article') return 'e';

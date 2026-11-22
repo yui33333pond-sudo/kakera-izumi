@@ -129,3 +129,102 @@ body.locked{overflow:hidden}
 .sunk .bar{border-radius:6px;background:var(--deep);min-height:44px}
 .sunk p{margin:10px 0}
 .k .h1{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:6;overflow:hidden}
+
+/* 写真・本・問いかけ（水面の上） */
+.pintoggle.icon{padding:0;width:40px;justify-content:center;font-size:17px;margin-left:auto}
+.pintoggle.icon+.pintoggle{margin-left:0}
+.pintoggle.book{width:auto;min-width:40px;padding:0 10px;font-size:14px}
+.pintoggle.book.on{background:#f2fbfa;color:var(--deep);border-color:#f2fbfa}
+.photoprev{display:flex;gap:10px;align-items:center;margin-top:10px;position:relative;z-index:1;font-size:13px;color:#b9dcd7}
+.photoprev img{width:56px;height:56px;object-fit:cover;border-radius:10px;flex:none}
+.photoprev span{flex:1}
+.photoprev .ghost{border-color:rgba(255,255,255,.28)}
+.asks{position:relative;z-index:1}
+.askbox,.guard,.suggest{margin-top:14px;padding:12px 14px;border-radius:14px;background:rgba(255,255,255,.08);border:1px solid rgba(127,209,199,.35)}
+.askbox .q,.guard p,.suggest p{margin:0 0 8px;font:700 16px/1.4 "Zen Maru Gothic",sans-serif;color:#f2fbfa}
+.guard{border-color:rgba(255,122,89,.6)}.guard p{font:500 15px/1.5 "Noto Sans JP",sans-serif}
+.guard .row,.suggest .row{margin-top:8px}
+.suggest input{border-color:transparent;padding:10px 14px}
+.arow{display:flex;gap:8px;align-items:center}
+.arow input{flex:1;padding:10px 14px}
+.arow .throw{margin-left:0}
+.askbox .ghost,.guard .ghost,.suggest .ghost{border-color:rgba(255,255,255,.28);color:#f2fbfa}
+.throw.small{min-height:40px;padding:0 14px}
+
+/* かけらのサムネイル・注記 */
+.k.has-thumb{display:grid;grid-template-columns:minmax(0,1fr) 64px;column-gap:12px}
+.k.has-thumb>*{grid-column:1}
+.k .thumb{grid-column:2;grid-row:1/span 3;width:64px;height:64px;object-fit:cover;border-radius:10px;background:var(--line)}
+.k .note{display:block;font-size:12px;color:var(--mute);margin-top:4px}
+.panel .photo{display:block;max-width:100%;max-height:60vh;border-radius:12px;margin:4px 0 14px;background:var(--line)}
+.scene{font-size:13px;color:var(--mute);margin:-8px 0 14px}
+.bookline-s{font-size:13px;color:var(--mute);margin:-6px 0 14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.hint-s{font-size:13px;color:var(--mute);margin:6px 0}
+.scene-note{font-size:13px;color:var(--mute);margin:0 0 10px}
+
+/* 長い投げ込み：段落 */
+.paras{margin:6px 0 18px;display:grid;gap:10px}
+.para{margin:0;padding:8px 12px 8px 34px;position:relative;white-space:pre-wrap;overflow-wrap:anywhere;font-size:16px;border-radius:10px;border:1px solid transparent}
+.para .pno{position:absolute;left:10px;top:9px;font-size:12px;color:var(--mute)}
+.para.focus{border-color:var(--coral);background:color-mix(in oklab,var(--coral) 7%,transparent)}
+.para.linked::after{content:"●";position:absolute;right:10px;top:8px;color:var(--aqua);font-size:11px}
+.para.linked{padding-right:28px}
+.para.editing{opacity:.4}
+
+/* 1年前のこのころ */
+.ago{margin-bottom:8px}
+.ago:empty{display:none}
+.ago h2{margin-bottom:10px}
+.ago-year{border-left:4px dashed color-mix(in oklab,var(--aqua) 60%,var(--line));padding-left:14px;margin-bottom:16px}
+.ago-year h3{font:700 14px/1.2 "Zen Maru Gothic",sans-serif;color:var(--mute);margin:2px 0 8px}
+.ago-year .list,.more-cards .list{display:grid;gap:8px}
+.more-cards summary{cursor:pointer;color:var(--mute);font-size:13px;padding:6px 0}
+.strata-head{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.strata-head h2{margin:0;flex:1}
+
+/* 柱 */
+.pillars{border-bottom:1px solid var(--line)}
+.pchip{font-weight:500}
+.ptitle{font-size:clamp(24px,5vw,30px);margin:6px 0 14px;overflow-wrap:anywhere}
+.psec{border-left:4px solid var(--line);padding:2px 0 2px 14px;margin-bottom:16px}
+.psec h3{font:700 15px/1.3 "Zen Maru Gothic",sans-serif;margin:0 0 6px}
+.psec ul{margin:0;padding-left:1.2em;display:grid;gap:4px}
+.psec .em{font-weight:700}
+.psec.r-risk,.psec.r-point{border-left-color:var(--coral)}
+.psec.r-control,.psec.r-doubt{border-left-color:#2f55c4}
+@media (prefers-color-scheme:dark){.psec.r-control,.psec.r-doubt{border-left-color:#9fb4ff}}
+.gather{margin-top:8px}
+.gather summary{cursor:pointer;font-size:13px;color:var(--mute);padding:4px 0}
+.gather .stack{margin-top:6px}
+.plinks{display:flex;flex-wrap:wrap;gap:8px}
+.ptext{min-height:300px;font-size:15px}
+.editbox label.hint-s{display:block}
+.editbox input[type=radio]{accent-color:var(--coral)}
+.prep-btns{position:sticky;bottom:0;background:var(--bg);padding:10px 0 4px;margin-top:20px}
+.prep-btns .throw{margin-left:auto}
+
+/* 本 */
+.bookcard{display:flex;gap:14px;align-items:flex-start;margin-bottom:6px}
+.bookcard img{width:72px;border-radius:6px;flex:none;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+.bookcard .ptitle{margin:2px 0 4px}
+.bookcand{display:flex;gap:12px;align-items:center;border-left-width:1px}
+.bookcand img{width:40px;border-radius:4px;flex:none}
+.bookcand b{display:block;font-weight:500}
+.shelfrow{border-left-width:1px}
+
+/* 取り込みと設定 */
+.settings{margin-top:32px;border-top:1px solid var(--line);padding-top:12px}
+.settings summary{cursor:pointer;font-size:14px;color:var(--mute)}
+.settings .prow{margin-top:10px}
+
+/* 星座 */
+.sky{position:fixed;inset:0;z-index:8;background:#050f13;color:#e6efee;display:flex;flex-direction:column}
+.sky-top{height:52px;display:flex;align-items:center;gap:10px;padding:max(8px,env(safe-area-inset-top)) 16px 0}
+.sky-title{font:700 18px "Zen Maru Gothic",sans-serif}
+.sky-count{flex:1;font-size:13px;color:#93a8ab}
+.sky .ghost{border-color:#1f3237;color:#e6efee}
+.sky canvas{display:block;touch-action:none;cursor:grab}
+.sky-tip{position:absolute;max-width:240px;background:#122126;border:1px solid #1f3237;border-radius:10px;padding:8px 10px;font-size:13px;pointer-events:none}
+.gather.loose{margin:0 0 14px}
+.prep-btns{flex-wrap:nowrap;gap:8px;border-top:1px solid var(--line)}
+.prep-btns button{min-height:40px;padding:0 14px;font-size:14px;white-space:nowrap}
