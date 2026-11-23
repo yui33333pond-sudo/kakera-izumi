@@ -228,3 +228,12 @@ body.locked{overflow:hidden}
 .gather.loose{margin:0 0 14px}
 .prep-btns{flex-wrap:nowrap;gap:8px;border-top:1px solid var(--line)}
 .prep-btns button{min-height:40px;padding:0 14px;font-size:14px;white-space:nowrap}
+
+/* 種類の手直し */
+.kindbtn{display:inline-flex;align-items:center;gap:5px;min-height:30px;padding:0 10px;font-size:13px;font-weight:500;color:var(--kc);background:transparent;border:1.5px solid color-mix(in oklab,var(--kc) 45%,transparent)}
+.kindbtn .sh,.kchip .sh{width:11px;height:11px;fill:var(--kc);flex:none}
+.kindrow{margin:0 0 14px;padding:10px 12px;border-radius:12px;background:var(--card)}
+.kindrow .lenses{margin:6px 0 0}
+.kchip{display:inline-flex;align-items:center;gap:6px}
+.kchip[aria-pressed=true]{background:var(--kc);border-color:var(--kc);color:var(--bg)}
+.kchip[aria-pressed=true] .sh{fill:var(--bg)}

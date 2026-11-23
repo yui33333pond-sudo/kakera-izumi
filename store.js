@@ -1,6 +1,6 @@
 // データの出し入れ。本番は Supabase、?demo を付けて開くとブラウザ内だけの試し用。
 
-const COLS = 'id, body, created_at, group_id, seq, source, lens, pinned_at, resolved_at, handoff, handoff_done_at, book_id, scene, image_path, pos_x, pos_y';
+const COLS = 'id, body, created_at, group_id, seq, source, lens, pinned_at, resolved_at, handoff, handoff_done_at, book_id, scene, image_path, pos_x, pos_y, kind_fix, kind_learned';
 const flat = (rows) => (rows || []).map((r) => ({ ...r.item, similarity: r.similarity, literal: r.literal }));
 const BUCKET = 'photos';
 
@@ -63,7 +63,7 @@ export function supabaseStore(sb) {
     async ofBook(bookId) { return must(await sb.from('kakera').select(COLS).eq('book_id', bookId).order('created_at')); },
     async updateBody(id, body) { must(await sb.from('kakera').update({ body, embedding: null }).eq('id', id)); },
     async pending(limit) {
-      return must(await sb.from('kakera').select('id, body, source, lens, group_id, seq, handoff')
+      return must(await sb.from('kakera').select('id, body, source, lens, group_id, seq, handoff, kind_fix')
         .or('embedding.is.null,lens.is.null,and(lens.eq.daily,source.in.(gmail,yahoo))').limit(limit));
     },
     async setEmbedding(id, vec, fields = {}) {
@@ -74,8 +74,15 @@ export function supabaseStore(sb) {
         .order('created_at').limit(limit));
     },
     async stars() {
-      return must(await sb.from('kakera').select('id, body, created_at, source, lens, handoff, resolved_at, pos_x, pos_y')
+      return must(await sb.from('kakera').select('id, body, created_at, source, lens, handoff, handoff_done_at, resolved_at, pos_x, pos_y, kind_fix, kind_learned')
         .not('pos_x', 'is', null).eq('seq', 0).order('created_at', { ascending: false }).limit(5000));
+    },
+    // 自分で選び直した種類の例（意味つき）。ids を渡すとそのかけらだけ
+    async kindExamples(ids) {
+      let q = sb.from('kakera').select('id, kind_fix, embedding').not('kind_fix', 'is', null).not('embedding', 'is', null)
+        .order('created_at', { ascending: false }).limit(300);
+      if (ids) q = q.in('id', ids);
+      return must(await q).map((r) => ({ id: r.id, k: r.kind_fix, v: typeof r.embedding === 'string' ? JSON.parse(r.embedding) : r.embedding }));
     },
     async existingRefs(source) {
       return new Set(must(await sb.from('kakera').select('source_ref').eq('source', source).not('source_ref', 'is', null).limit(20000)).map((r) => r.source_ref));
@@ -151,7 +158,7 @@ export function memoryStore() {
     .map((r) => ({ ...pub(r), similarity: dot(vec, r.embedding) }))
     .sort((a, b) => b.similarity - a.similarity).slice(0, n);
   const find = (id) => rows.find((x) => x.id === id);
-  const blank = { seq: 0, source: 'hand', lens: null, pinned_at: null, resolved_at: null, handoff: false, handoff_done_at: null, book_id: null, scene: null, image_path: null, pos_x: null, pos_y: null };
+  const blank = { seq: 0, source: 'hand', lens: null, pinned_at: null, resolved_at: null, handoff: false, handoff_done_at: null, book_id: null, scene: null, image_path: null, pos_x: null, pos_y: null, kind_fix: null, kind_learned: null };
   return {
     kind: 'memory',
     async session() { return { user: { email: 'demo' } }; },
@@ -189,11 +196,14 @@ export function memoryStore() {
     async updateBody(id, body) { const r = find(id); if (r) { r.body = body; r.embedding = null; } },
     async pending(limit) {
       return rows.filter((r) => !r.embedding || !r.lens || (r.lens === 'daily' && (r.source === 'gmail' || r.source === 'yahoo'))).slice(0, limit)
-        .map(({ id, body, source, lens, group_id, seq, handoff }) => ({ id, body, source, lens, group_id, seq, handoff }));
+        .map(({ id, body, source, lens, group_id, seq, handoff, kind_fix }) => ({ id, body, source, lens, group_id, seq, handoff, kind_fix }));
     },
     async setEmbedding(id, vec, fields = {}) { const r = find(id); if (r) Object.assign(r, { embedding: vec }, fields); },
     async unplaced(limit) { return rows.filter((r) => r.pos_x == null && r.seq === 0 && r.embedding).sort((a, b) => a.created_at.localeCompare(b.created_at)).slice(0, limit).map((r) => ({ id: r.id })); },
     async stars() { return rows.filter((r) => r.pos_x != null && r.seq === 0).map(pub); },
+    async kindExamples(ids) {
+      return rows.filter((r) => r.kind_fix && r.embedding && (!ids || ids.includes(r.id))).map((r) => ({ id: r.id, k: r.kind_fix, v: r.embedding }));
+    },
     async existingRefs(source) { return new Set(rows.filter((r) => r.source === source && r.source_ref).map((r) => r.source_ref)); },
     async bumpWords(ws, origin, kid) {
       for (const w0 of ws) {

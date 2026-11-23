@@ -1,6 +1,6 @@
 import { supabaseStore, memoryStore } from './store.js';
 import { lookup } from './dict.js';
-import { LENSES, lensLabel, loadProtos, classify, isHandoff, wordsFromMine, wordsFromMail, KINDS, kindOf, mostlyEnglish } from './lens.js';
+import { LENSES, lensLabel, loadProtos, classify, isHandoff, wordsFromMine, wordsFromMail, KINDS, kindOf, mostlyEnglish, learnKind, kindFields } from './lens.js';
 import { currentScene, hereRounded, sceneLabel, parseSceneQuery } from './scene.js';
 import { shrink, readText } from './photo.js';
 import { isbnFromPhoto, lookupIsbn, searchBooks } from './book.js';
@@ -397,10 +397,14 @@ async function renderKakera(id) {
       : `<div class="full" id="full">${esc(it.body)}</div>`;
     const photo = sibs.find((s) => s.image_path);
     const book = head.book_id || it.book_id;
-    paint(`${KINDS[k][0]} · ${dlabel(it.created_at)}${tag(it)}`,
+    const fixed = (group ? head : it).kind_fix;
+    paint(`<button class="kindbtn kd-${k}" data-act="kindOpen" aria-expanded="false" title="種類を選び直す">${shape(k)}${KINDS[k][0]}${fixed ? '（自分で）' : ''} ▾</button> · ${dlabel(it.created_at)}${tag(it)}`,
       `<button class="ghost small" id="pinBtn" data-id="${id}" aria-pressed="${!!it.pinned_at}">${it.pinned_at ? '📌 外す' : '📌 ピン'}</button>`
       + `<button class="ghost small" id="edit">${group ? 'この段落を直す' : '直す'}</button>`,
-      (photo ? `<img class="photo" data-path="${esc(photo.image_path)}" alt="写真">` : '')
+      `<div class="kindrow" id="kindRow" hidden><p class="hint-s">種類を選び直す。直した結果は覚えて、次から似たかけらに使う。</p><div class="lenses">`
+      + Object.entries(KINDS).map(([key, [label]]) => `<button class="chip kchip kd-${key}" data-act="kindSet" data-k="${key}" aria-pressed="${key === k}">${shape(key)}${label}</button>`).join('')
+      + (fixed ? `<button class="chip" data-act="kindSet" data-k="">自動に戻す</button>` : '') + '</div></div>'
+      + (photo ? `<img class="photo" data-path="${esc(photo.image_path)}" alt="写真">` : '')
       + full
       + (it.scene ? `<p class="scene">${esc(sceneLabel(it.scene))}</p>` : '')
       + (book ? `<p class="bookline-s">📖 ${esc(bookTitle(book))} を読んでいたとき <button class="ghost small" data-act="unbook" data-id="${head.id}">本から外す</button></p>` : '')
@@ -515,7 +519,16 @@ async function settle(rows, vecs, bump) {
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     const fields = { lens: classify(row, vecs[i], protos) };
-    if (!row.handoff && isHandoff(row, vecs[i], protos)) fields.handoff = true;
+    if (row.kind_fix) Object.assign(fields, kindFields(row.kind_fix, { ...row, ...fields }));   // 自分で選んだ種類はそのまま
+    else if (!row.handoff) {
+      // 選び直した例にとても近ければ、その種類にする。なければいつもの見分け
+      const learned = learnKind(vecs[i], await kindExamples());
+      if (learned) Object.assign(fields, { kind_learned: learned }, kindFields(learned, { ...row, ...fields }));
+      else {
+        if (row.kind_learned) fields.kind_learned = null;
+        if (isHandoff(row, vecs[i], protos)) fields.handoff = true;
+      }
+    }
     await store.setEmbedding(row.id, vecs[i], fields);
     Object.assign(row, fields); patchLocal(row.id, fields);
     if (row.seq === 0 && row.pos_x == null) {
@@ -527,6 +540,32 @@ async function settle(rows, vecs, bump) {
       else if (fields.lens === 'word') { await store.bumpWords(wordsFromMine(row.body), 'mine', row.id); loadWord(); }
     } catch (e) { console.error(e); }
   }
+}
+
+// ---- 種類の手直し：選び直した例を覚えて、次からの見分けに使う ----
+let kindEx = null;
+async function kindExamples() {
+  if (!kindEx) kindEx = store.kindExamples().catch((e) => { console.error(e); kindEx = null; return []; });
+  return kindEx;
+}
+async function fixKind(k) {
+  const id = stack[stack.length - 1].id;
+  const ids = JSON.parse($('panel').dataset.group || '[]');
+  const list = ids.length ? ids : [id];
+  try {
+    for (const x of list) {
+      const it = known.get(x) || { id: x };
+      const f = k ? { kind_fix: k, kind_learned: null, ...kindFields(k, it) } : { kind_fix: null, kind_learned: null, lens: null, handoff: false };   // 自動に戻す：見分け直しは backfill で
+      await store.patch(x, f);
+      patchLocal(x, f);
+    }
+    // 覚えている例を入れ替える
+    const ex = (await kindExamples()).filter((e) => !list.includes(e.id));
+    kindEx = Promise.resolve(k ? [...(await store.kindExamples(list)), ...ex] : ex);
+    renderStrata(); if (hits.length) renderResults(); loadPins(); refresh();
+    toast(k ? `「${KINDS[k][0]}」に直した。似たかけらは次からこの種類にするね` : '自動の見分けに戻した');
+    if (!k) { await backfill(); refresh(); }
+  } catch (e) { fail(e); }
 }
 
 // 星座にまだ置いていないかけら（前からあったもの）を、古い順に置く
@@ -1075,6 +1114,8 @@ document.addEventListener('click', async (e) => {
       case 'guardGo': $('ripple').innerHTML = ''; throwIt({ checked: true, plain: !!d.plain }); return;
       case 'guardFix': $('ripple').innerHTML = ''; $('inp').focus(); return;
       case 'photoOff': setPhoto(null); return;
+      case 'kindOpen': { const open = $('kindRow').hidden; $('kindRow').hidden = !open; act.setAttribute('aria-expanded', String(open)); return; }
+      case 'kindSet': fixKind(d.k || null); return;
       case 'plainThrow': closeSheet(); throwIt({ plain: true }); return;
       case 'going': going(d.topic); return;
       case 'prepOf': openView({ t: 'prep', id: d.name }); return;

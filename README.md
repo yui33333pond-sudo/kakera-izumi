@@ -112,6 +112,11 @@ Settings → Pages → Branch: `main` / `(root)` で公開。PCでもスマホ�
 - **本**：📖 から、バーコード・表紙・題名で「いま読んでる本」をセット（openBD → Google Books → 国立国会図書館サーチ → Open Library）。
 - **写真**：📷 から。端末で縮小してから保存し、写っている文字を端末の中で読み取る（tesseract.js・初回は読み取り用データを取ってくる）。
 
+## 8. 種類の手直し（SQL をもう1つ）
+
+**SQL Editor** で `supabase/07_kind_fix.sql` を丸ごと貼って **Run**。
+かけらを開いて左上の種類（例：「日々 ▾」）を押すと選び直せる。選び直した例と意味が近い新しいかけら（近さ 0.48 以上、`lens.js` の `LEARN_MIN`）は、次からその種類になる。
+
 ## 調整つまみ
 
 `app.js` の先頭：
@@ -141,6 +146,7 @@ Settings → Pages → Branch: `main` / `(root)` で公開。PCでもスマホ�
 | `supabase/03_lens_words.sql` | レンズの列、英単語の表 |
 | `supabase/04_pin.sql` | ピンの列 |
 | `supabase/05_kinds.sql` | 未解決の「解決した」、探した結果にも種類を載せる |
+| `supabase/07_kind_fix.sql` | 種類の手直し（自分で選んだ種類・学んだ種類） |
 | `supabase/06_all.sql` | 申し送り・本・写真・情景・星座の列、柱・本・設定の表、写真の置き場所 |
 | `scene.js` | 情景（時間帯・天気・場所の雰囲気） |
 | `photo.js` | 写真の縮小と文字の読み取り |

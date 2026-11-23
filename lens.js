@@ -132,6 +132,9 @@ export const KINDS = {
   d: ['日々', '<ellipse cx="5.5" cy="5.5" rx="3.6" ry="5.5" transform="rotate(35 5.5 5.5)"/>'],
 };
 export function kindOf(it) {
+  // 自分で選び直した種類 → 学んで付けた種類 → いつもの見分け（解決した・やった ものは元の見分けへ戻る）
+  const pick = it.kind_fix || it.kind_learned;
+  if (pick && !(pick === 'u' && it.resolved_at) && !(pick === 'h' && it.handoff_done_at)) return pick;
   const mine = !it.source || it.source === 'hand';
   if (it.handoff && !it.handoff_done_at) return 'h';
   if (mine && UNRES.test(it.body) && !it.resolved_at) return 'u';
@@ -141,3 +144,24 @@ export function kindOf(it) {
   return WORK.test(it.body) ? 'w' : stats(it.body).ratio >= 0.5 ? 'e' : 'd';
 }
 export const mostlyEnglish = (text) => stats(text).ratio >= 0.5;
+
+// ---- 選び直した例から学ぶ：意味がとても近い例があれば、その種類にする ----
+const LEARN_MIN = 0.48;   // 関係ない文どうしは 0.1〜0.3。同じ話題の言い回しで 0.5 前後
+export function learnKind(vec, examples) {
+  if (!vec || !examples || !examples.length) return null;
+  const top = examples.map((e) => ({ k: e.k, s: dot(vec, e.v) })).sort((a, b) => b.s - a.s).slice(0, 5);
+  if (top[0].s < LEARN_MIN) return null;
+  const votes = {};
+  for (const t of top) if (t.s >= top[0].s - 0.08) votes[t.k] = (votes[t.k] || 0) + t.s;
+  return Object.entries(votes).sort((a, b) => b[1] - a[1])[0][0];
+}
+// 種類に合わせてレンズ・申し送り・未解決をそろえる
+export function kindFields(k, it) {
+  const f = {};
+  if (k === 'h') { f.handoff = true; f.handoff_done_at = null; } else f.handoff = false;
+  if (k === 'u') f.resolved_at = null;
+  if (k === 'w') f.lens = 'accounting';
+  if (k === 'd' && it.source !== 'gmail' && it.source !== 'yahoo') f.lens = 'daily';   // メルマガは日々のレンズに入れない
+  if (k === 'e' && it.lens !== 'word' && it.lens !== 'article') f.lens = 'article';
+  return f;
+}
