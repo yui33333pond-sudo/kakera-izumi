@@ -46,11 +46,15 @@
       <label for="inp" class="hint" style="display:block;margin-bottom:6px">思いついたこと、読んだこと、今日のこと</label>
       <textarea id="inp" placeholder="例：accrual って発生主義のことか。メルマガで出てきた"></textarea>
       <div class="photoprev" id="photoPrev" hidden></div>
-      <div class="row"><span class="hint" id="kbdHint">⌘/Ctrl + Enter でも投げられる</span><button class="pintoggle icon" id="photoBtn" aria-pressed="false" aria-label="写真を添える" title="写真を添える">📷</button><button class="pintoggle icon book" id="bookBtn" aria-label="本をセット" title="いま読んでる本">📖</button><button class="pintoggle" id="pinThrow" aria-pressed="false" title="ピンして投げる">📌 ピンして</button><button class="throw" id="throw">投げる</button></div>
+      <div class="row"><span class="hint" id="kbdHint">⌘/Ctrl + Enter でも投げられる</span><button class="pintoggle icon" id="photoBtn" aria-pressed="false" aria-label="写真を添える" title="写真を添える">📷</button><button class="pintoggle" id="pinThrow" aria-pressed="false" title="ピンして投げる">📌 ピンして</button><button class="throw" id="throw">投げる</button></div>
       <input type="file" id="photoIn" accept="image/*" hidden>
       <div class="asks" id="asks" aria-live="polite"></div>
       <div class="ripple" id="ripple" aria-live="polite"></div>
       <p class="model" id="model" aria-live="polite"></p>
+    </section>
+    <section class="band pages" id="pages">
+      <div class="strata-head"><h2>ページ</h2><button class="ghost small" data-act="newPage" data-kind="training">＋ 研修</button><button class="ghost small" data-act="newPage" data-kind="book">＋ 本</button></div>
+      <div class="lenses" id="pageList"></div>
     </section>
     <section class="band pillars" id="pillars" hidden>
       <h2>柱</h2>
@@ -73,7 +77,7 @@
   </div>
   <section class="band strata">
     <div id="ago" class="ago"></div>
-    <div class="strata-head"><h2 id="strataTitle">最近のかけら</h2><button class="ghost small" id="skyBtn">✦ 星座</button></div>
+    <div class="strata-head"><h2 id="strataTitle">最近のかけら</h2><button class="ghost small" data-act="overview">俯瞰</button><button class="ghost small" id="skyBtn">✦ 星座</button></div>
     <div id="strata"></div>
     <details class="settings">
       <summary>取り込みと設定</summary>
@@ -88,6 +92,7 @@
 
 <div class="sheet" id="sheet"><div class="panel" id="panel" role="dialog" aria-modal="true" aria-label="かけら"></div></div>
 <div class="sky" id="sky" hidden></div>
+<div class="over" id="over" hidden></div>
 <input type="file" id="barIn" accept="image/*" capture="environment" hidden>
 <input type="file" id="coverIn" accept="image/*" capture="environment" hidden>
 <input type="file" id="notionIn" accept=".zip,.md,.txt" multiple hidden>

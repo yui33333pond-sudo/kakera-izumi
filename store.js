@@ -115,9 +115,30 @@ export function supabaseStore(sb) {
     async removePillar(id) { must(await sb.from('pillars').delete().eq('id', id)); },
 
     // ---- 本 ----
-    async books() { return must(await sb.from('books').select('*').order('started_at', { ascending: false })); },
+    // ---- ページ（研修・本）。テーブルは books のまま、かけらの book_id がページ ----
+    async books() { return must(await sb.from('books').select('*').order('opened_at', { ascending: false })); },
     async addBook(b) { return must(await sb.from('books').insert(b).select().single()); },
     async patchBook(id, fields) { must(await sb.from('books').update(fields).eq('id', id)); },
+    async removeBook(id) {
+      must(await sb.from('kakera').update({ book_id: null }).eq('book_id', id));
+      must(await sb.from('books').delete().eq('id', id));
+    },
+    // ページの中で探すための意味（ページのかけらだけ）
+    async pageVecs(bookId) {
+      return must(await sb.from('kakera').select('id, embedding').eq('book_id', bookId).not('embedding', 'is', null).limit(2000))
+        .map((r) => ({ id: r.id, v: typeof r.embedding === 'string' ? JSON.parse(r.embedding) : r.embedding }));
+    },
+    // 俯瞰モード：投げ込みごとに1行（種類の色とページを見るだけ）。1000行ずつ取る
+    async overview() {
+      const out = [];
+      for (let from = 0; from < 20000; from += 1000) {
+        const part = must(await sb.from('kakera').select('id, body, created_at, source, lens, handoff, handoff_done_at, resolved_at, kind_fix, kind_learned, book_id')
+          .eq('seq', 0).order('created_at', { ascending: false }).range(from, from + 999));
+        out.push(...part);
+        if (part.length < 1000) break;
+      }
+      return out;
+    },
 
     // ---- ちょっとした状態 ----
     async kvGet(key) { return (must(await sb.from('kv').select('value').eq('key', key).maybeSingle()) || {}).value ?? null; },
@@ -231,9 +252,12 @@ export function memoryStore() {
       return row;
     },
     async removePillar(id) { pillarRows = pillarRows.filter((x) => x.id !== id); },
-    async books() { return bookRows.slice().sort((a, b) => b.started_at.localeCompare(a.started_at)); },
-    async addBook(b) { const row = { id: crypto.randomUUID(), status: 'reading', started_at: new Date().toISOString(), ...b }; bookRows.push(row); return row; },
+    async books() { return bookRows.slice().sort((a, b) => b.opened_at.localeCompare(a.opened_at)); },
+    async addBook(b) { const now = new Date().toISOString(); const row = { id: crypto.randomUUID(), kind: 'book', status: 'reading', started_at: now, opened_at: now, finished_at: null, ...b }; bookRows.push(row); return row; },
     async patchBook(id, f) { Object.assign(bookRows.find((x) => x.id === id) || {}, f); },
+    async removeBook(id) { rows.forEach((r) => { if (r.book_id === id) r.book_id = null; }); bookRows = bookRows.filter((x) => x.id !== id); },
+    async pageVecs(id) { return rows.filter((r) => r.book_id === id && r.embedding).map((r) => ({ id: r.id, v: r.embedding })); },
+    async overview() { return rows.filter((r) => r.seq === 0).sort(desc).map(pub); },
     async kvGet(k) { return kv.has(k) ? kv.get(k) : null; },
     async kvSet(k, v) { v === null ? kv.delete(k) : kv.set(k, v); },
     async uploadPhoto(id, full, thumb) { const p = `demo/${id}.jpg`; photos.set(p, URL.createObjectURL(full)); photos.set(p.replace('.jpg', '_t.jpg'), URL.createObjectURL(thumb)); return p; },

@@ -237,3 +237,44 @@ body.locked{overflow:hidden}
 .kchip{display:inline-flex;align-items:center;gap:6px}
 .kchip[aria-pressed=true]{background:var(--kc);border-color:var(--kc);color:var(--bg)}
 .kchip[aria-pressed=true] .sh{fill:var(--bg)}
+/* ページ（研修・本） */
+.pages .strata-head{margin-bottom:10px}
+.pages .lenses{margin:0}
+.pages .hint-s{margin:0}
+.pgchip{font-weight:500;display:inline-flex;align-items:center;gap:6px}
+.pgchip.done{opacity:.72}
+.pgdone{font-size:11px;color:var(--mute);border:1px solid var(--line);border-radius:999px;padding:1px 6px}
+.panel #pgQ{margin:8px 0 6px}
+.pgres{margin-bottom:10px}
+.pgres .stack{display:grid;gap:8px;margin:6px 0}
+.pglist{display:grid;gap:10px;margin:10px 0 14px}
+.pgday summary{cursor:pointer;font:700 15px/1.2 "Zen Maru Gothic",sans-serif;color:var(--mute);padding:6px 0;list-style-position:inside}
+.pgday .list{display:grid;gap:8px;margin-top:6px}
+.pgthrow{background:var(--deep);color:#f2fbfa;border-radius:16px;padding:12px}
+.pgthrow textarea{min-height:84px;border-color:transparent}
+.pgthrow .hint-s{color:#b9dcd7;margin:0}
+.pgthrow .ripple{margin-top:10px}
+.bookline-s .pgchip{min-height:30px;font-size:13px}
+/* 同じときに投げたもの */
+.sametime{display:flex;gap:8px;overflow-x:auto;scroll-snap-type:x proximity;padding-bottom:6px;margin:0 -2px}
+.sametime .k{flex:0 0 min(240px,78%);scroll-snap-align:start;font-size:14px}
+.k.mini .rest{-webkit-line-clamp:3}
+.topage{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0 4px}
+.topage .hint-s{margin:0 4px 0 0}
+.offer{border:1.5px solid var(--aqua);border-radius:14px;padding:10px 12px;margin:12px 0 4px}
+.offer p{margin:0 0 4px;font-size:14px}
+/* 俯瞰モード */
+.over{position:fixed;inset:0;z-index:8;background:var(--bg);color:var(--ink);overflow:auto;overscroll-behavior:contain}
+.ov-top{position:sticky;top:0;z-index:1;display:flex;align-items:center;gap:10px;padding:calc(10px + env(safe-area-inset-top)) max(4vw,16px) 10px;background:var(--bg);border-bottom:1px solid var(--line)}
+.ov-title{flex:1;font:700 20px "Zen Maru Gothic",sans-serif}
+.ov-body{max-width:760px;margin:0 auto;padding:14px max(4vw,16px) calc(40px + env(safe-area-inset-bottom))}
+.ov-lead{margin:0 0 10px}
+.ov-legend{display:flex;flex-wrap:wrap;gap:12px;font-size:13px;color:var(--mute);margin-bottom:18px}
+.ov-legend span{display:inline-flex;align-items:center;gap:5px}
+.ov-legend .sh{width:11px;height:11px;fill:var(--kc)}
+.ovlayer{padding:12px 0 14px;border-top:1px solid var(--line)}
+.ovlayer h3{font:700 15px/1.2 "Zen Maru Gothic",sans-serif;color:var(--mute);margin:0 0 8px}
+.ov-ratio{display:flex;border-radius:8px;overflow:hidden;gap:2px}
+.ov-ratio span{background:var(--kc);min-width:3px}
+.ov-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.ov-chips:empty{display:none}
