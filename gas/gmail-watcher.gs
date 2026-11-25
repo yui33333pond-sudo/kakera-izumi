@@ -19,6 +19,7 @@
  *
  * 使い方
  *   0. listSenders を実行 → 最近の差出人の一覧（SENDERS に入れる候補）が出る。足したら recheck
+ *      入ってこないときは check → 最近3日のメールごとに、入る／入らない理由が出る
  *   1. tryIt を実行 → ログに「何が沈むか」が出る（まだ送らない）
  *   2. setup を実行 → 1時間ごとの見張りが始まる（最初の1回もすぐ動く）
  *   「泉行き」ラベルをまとめて取り込むとき
@@ -55,6 +56,28 @@ function listSenders() {
   console.log(`いまの SENDERS：${cfg.senders.length ? cfg.senders.join(', ') : '（空っぽ）'}\n\n最近14日の差出人：\n` +
     rows.map((a) => `${accepted_(a, cfg.senders) ? '✓' : '・'} ${a}（${count[a].n}通）${count[a].name} 「${String(count[a].subject).slice(0, 40)}」`).join('\n') +
     '\n\n✓ は取り込む差出人。取り込みたいアドレスを SENDERS にカンマ区切りで足してから recheck を実行する');
+}
+
+// 最近3日のメール1通ずつ、入る／入らない理由をログに出す。受け付けるものは送ってみる（同じものは二度入らない）
+function check() {
+  const cfg = conf_();
+  const since = Date.now() - 3 * 864e5;
+  const day = (d) => Utilities.formatDate(d, Session.getScriptTimeZone(), 'MM/dd HH:mm');
+  const out = [`SENDERS：${cfg.senders.length ? cfg.senders.join(', ') : '（空っぽ）'}`];
+  const spam = GmailApp.search('in:spam newer_than:3d', 0, 50);
+  if (spam.length) out.push(`迷惑メールに ${spam.length} 通（見張り番は迷惑メールの中を見ない）：` + spam.map((t) => addr_(t.getMessages()[0].getFrom())).join(', '));
+  for (const th of GmailApp.search('newer_than:3d', 0, 50)) {
+    for (const msg of th.getMessages()) {
+      if (msg.getDate().getTime() < since) continue;
+      const from = addr_(msg.getFrom());
+      const k = toKakera_(msg, cfg);
+      let why;
+      if (!k) why = accepted_(from, cfg.senders) ? '本文が読めなくて入らない' : from === cfg.yahoo ? 'Yahoo からだけど転送の形じゃない' : '登録外の差出人なので飛ばす';
+      else { const n = send_(cfg, k); why = n ? `${n} 段落を新しく沈めた` : `${k.length} 段落とも、もう泉に入っている`; }
+      out.push(`${day(msg.getDate())} ${from}「${String(msg.getSubject()).slice(0, 30)}」→ ${why}`);
+    }
+  }
+  console.log(out.join('\n'));
 }
 
 // 最近14日の「見た」印を外して、もう一度見張る（SENDERS を足したあとに。同じメールは二度入らない）
@@ -268,7 +291,8 @@ function conf_() {
     url: p.SUPABASE_URL.replace(/\/+$/, ''),
     key: p.SUPABASE_KEY,
     token: p.INGEST_TOKEN,
-    senders: (p.SENDERS || '').split(/[,\s]+/).map((s) => s.trim().toLowerCase()).filter(Boolean),
+    // 「名前 <addr>」や全角の区切りで書いても、アドレス（または @ドメイン）だけを拾う
+    senders: (p.SENDERS || '').toLowerCase().match(/[a-z0-9._%+-]*@[a-z0-9-]+(?:\.[a-z0-9-]+)+/g) || [],
     yahoo: (p.YAHOO_ADDRESS || '').trim().toLowerCase(),
     folder: (p.FOLDER_LABEL || '泉行き').trim(),
   };
