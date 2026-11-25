@@ -18,6 +18,7 @@
  *   FOLDER_LABEL   （なくてよい）まとめて取り込むラベル名。初期値は「泉行き」
  *
  * 使い方
+ *   0. listSenders を実行 → 最近の差出人の一覧（SENDERS に入れる候補）が出る。足したら recheck
  *   1. tryIt を実行 → ログに「何が沈むか」が出る（まだ送らない）
  *   2. setup を実行 → 1時間ごとの見張りが始まる（最初の1回もすぐ動く）
  *   「泉行き」ラベルをまとめて取り込むとき
@@ -38,6 +39,33 @@ function setup() {
 }
 
 function tryIt() { watch(true); }
+
+// 最近14日に届いたメールの差出人を、多い順にログに出す（SENDERS に入れる候補）。何も送らない
+function listSenders() {
+  const cfg = conf_();
+  const count = {};
+  for (const th of GmailApp.search(LOOKBACK, 0, 200)) {
+    for (const msg of th.getMessages()) {
+      const a = addr_(msg.getFrom());
+      if (!count[a]) count[a] = { n: 0, name: name_(msg.getFrom()), subject: msg.getSubject() };
+      count[a].n++;
+    }
+  }
+  const rows = Object.keys(count).sort((a, b) => count[b].n - count[a].n);
+  console.log(`いまの SENDERS：${cfg.senders.length ? cfg.senders.join(', ') : '（空っぽ）'}\n\n最近14日の差出人：\n` +
+    rows.map((a) => `${accepted_(a, cfg.senders) ? '✓' : '・'} ${a}（${count[a].n}通）${count[a].name} 「${String(count[a].subject).slice(0, 40)}」`).join('\n') +
+    '\n\n✓ は取り込む差出人。取り込みたいアドレスを SENDERS にカンマ区切りで足してから recheck を実行する');
+}
+
+// 最近14日の「見た」印を外して、もう一度見張る（SENDERS を足したあとに。同じメールは二度入らない）
+function recheck() {
+  const label = GmailApp.getUserLabelByName(DONE_LABEL);
+  if (label) {
+    const threads = GmailApp.search(`label:${DONE_LABEL} ${LOOKBACK}`, 0, 200);
+    if (threads.length) label.removeFromThreads(threads);
+  }
+  watch();
+}
 
 function watch(dryRun) {
   dryRun = dryRun === true;  // 時間で動くときは引数にイベントが入るので、true のときだけ「見るだけ」
