@@ -1,6 +1,6 @@
 // アプリの画面ファイルだけを預かる。かけら本体（Supabase）とモデルはここでは扱わない。
 // いつもは新しいものを取りに行き、電波がないときだけ預かったものを出す。
-const CACHE = 'kakera-shell-v3';
+const CACHE = 'vitrine-shell-v1';
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => {

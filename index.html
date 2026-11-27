@@ -2,101 +2,48 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="theme-color" content="#0b3a4a">
+<meta name="theme-color" content="#ffffff">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="かけら">
-<title>かけらの泉</title>
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="vitrine">
+<title>vitrine</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700&family=Noto+Sans+JP:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<!-- ログイン -->
 <main class="gate" id="gate" hidden>
   <div class="gate-card">
-    <h1>かけらの泉</h1>
-    <p class="sub">自分だけの泉。</p>
+    <h1 class="logo">vitrine</h1>
     <form id="loginForm">
-      <label for="email" class="hint">メールアドレス</label>
-      <input type="email" id="email" name="email" autocomplete="username" required>
-      <label for="password" class="hint">パスワード</label>
-      <input type="password" id="password" name="password" autocomplete="current-password" required>
-      <button class="throw" type="submit">入る</button>
+      <label for="email">メールアドレス</label>
+      <input type="email" id="email" autocomplete="username" required>
+      <label for="password">パスワード</label>
+      <input type="password" id="password" autocomplete="current-password" required>
+      <button class="btn" type="submit">入る</button>
     </form>
-    <p class="gate-msg" id="gateMsg" aria-live="polite"></p>
+    <p class="hint" id="gateMsg" aria-live="polite"></p>
   </div>
 </main>
 
-<!-- 本体 -->
-<div class="wrap" id="app" hidden>
-  <div class="left">
-    <section class="surface" id="surface">
-      <svg class="rings" viewBox="0 0 300 300" aria-hidden="true"><circle cx="150" cy="150" r="40"/><circle cx="150" cy="150" r="80"/><circle cx="150" cy="150" r="120"/><circle cx="150" cy="150" r="148"/></svg>
-      <svg class="drop" aria-hidden="true"><circle cx="50%" cy="60%" r="4"/><circle cx="50%" cy="60%" r="4"/><circle cx="50%" cy="60%" r="4"/></svg>
-      <h1>かけらの泉</h1>
-      <p class="sub">タイトルも置き場所も決めなくていい。投げるだけ。</p>
-      <label for="inp" class="hint" style="display:block;margin-bottom:6px">思いついたこと、読んだこと、今日のこと</label>
-      <textarea id="inp" placeholder="例：accrual って発生主義のことか。メルマガで出てきた"></textarea>
-      <div class="photoprev" id="photoPrev" hidden></div>
-      <div class="row"><span class="hint" id="kbdHint">⌘/Ctrl + Enter でも投げられる</span><button class="pintoggle icon" id="photoBtn" aria-pressed="false" aria-label="写真を添える" title="写真を添える">📷</button><button class="pintoggle" id="pinThrow" aria-pressed="false" title="ピンして投げる">📌 ピンして</button><button class="throw" id="throw">投げる</button></div>
-      <input type="file" id="photoIn" accept="image/*" hidden>
-      <div class="asks" id="asks" aria-live="polite"></div>
-      <div class="ripple" id="ripple" aria-live="polite"></div>
-      <p class="model" id="model" aria-live="polite"></p>
-    </section>
-    <section class="band pages" id="pages">
-      <div class="strata-head"><h2>ページ</h2><button class="ghost small" data-act="newPage" data-kind="training">＋ 研修</button><button class="ghost small" data-act="newPage" data-kind="book">＋ 本</button></div>
-      <div class="lenses" id="pageList"></div>
-    </section>
-    <section class="band pillars" id="pillars" hidden>
-      <h2>柱</h2>
-      <div class="lenses" id="pillarList"></div>
-    </section>
-    <section class="band pins" id="pins" hidden>
-      <h2>ピン</h2>
-      <div class="stack" id="pinList"></div>
-    </section>
-    <section class="band wordday" id="wordday" hidden>
-      <h2>今日の英単語</h2>
-      <div id="wordBox"></div>
-    </section>
-    <section class="band">
-      <h2>泉を探す</h2>
-      <div class="lenses" id="lenses" role="group" aria-label="レンズ"></div>
-      <input type="search" id="q" placeholder="例：240の改正、発生主義、しんどい" enterkeyhint="search">
-      <div id="results" style="margin-top:14px"></div>
-    </section>
-  </div>
-  <section class="band strata">
-    <div id="ago" class="ago"></div>
-    <div class="strata-head"><h2 id="strataTitle">最近のかけら</h2><button class="ghost small" data-act="overview">俯瞰</button><button class="ghost small" id="skyBtn">✦ 星座</button></div>
-    <div id="strata"></div>
-    <details class="settings">
-      <summary>取り込みと設定</summary>
-      <div class="prow"><button class="ghost small" data-act="notion">Notion の書き出しを取り込む</button></div>
-      <p class="hint-s">Notion で「Markdown & CSV」で書き出した zip（または .md）を選ぶ。科目メモの型のページは柱に、それ以外はかけらになる。何度取り込んでも重ならない。</p>
-      <div class="prow"><button class="ghost small" data-act="home">ここを家にする</button><button class="ghost small" data-act="work">ここを職場にする</button></div>
-      <p class="hint-s">情景（「雨の朝・家」など）に使う目安。かけらには座標を残さず、ことばだけ残す。</p>
-    </details>
-    <p class="foot"><span id="who"></span><button class="ghost small" id="logout">出る</button></p>
-  </section>
+<div id="app" hidden>
+  <header class="top">
+    <nav class="crumbs" id="crumbs" aria-label="今いる場所"></nav>
+    <input type="search" id="q" placeholder="探す（例：実査、240やる）" aria-label="探す" enterkeyhint="search" autocomplete="off">
+  </header>
+  <main id="view" class="view"></main>
+  <footer class="foot"><span id="status" aria-live="polite"></span><button class="btn ghost small" data-act="logout">出る</button></footer>
 </div>
 
-<div class="sheet" id="sheet"><div class="panel" id="panel" role="dialog" aria-modal="true" aria-label="かけら"></div></div>
-<div class="sky" id="sky" hidden></div>
-<div class="over" id="over" hidden></div>
-<input type="file" id="barIn" accept="image/*" capture="environment" hidden>
-<input type="file" id="coverIn" accept="image/*" capture="environment" hidden>
-<input type="file" id="notionIn" accept=".zip,.md,.txt" multiple hidden>
-<div class="toast" id="toast"><span id="toastMsg"></span><button id="undo">元に戻す</button></div>
+<div class="modal" id="modal" hidden></div>
+<div class="toast" id="toast" role="status"></div>
 
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>

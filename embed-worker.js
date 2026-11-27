@@ -5,8 +5,9 @@ import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transfo
 env.allowLocalModels = false;
 env.useBrowserCache = true;
 
-// 日本語と英語をまたいで同じ意味を近くに置くよう学習された小さなモデル（384次元）
-const MODEL = 'Xenova/paraphrase-multilingual-MiniLM-L12-v2';
+// 文書探しのために学習された多言語の小さなモデル（384次元・512トークンまで読める）
+// 探す言葉には「query: 」、しまうものには「passage: 」を頭に付ける決まり
+const MODEL = 'Xenova/multilingual-e5-small';
 let ready = null;
 
 function load() {
@@ -27,11 +28,12 @@ function load() {
 }
 
 self.onmessage = async (e) => {
-  const { id, texts } = e.data;
+  const { id, texts, kind } = e.data;
   try {
     const pipe = await load();
     if (!texts) { self.postMessage({ id, vectors: [] }); return; }
-    const out = await pipe(texts, { pooling: 'mean', normalize: true });
+    const head = kind === 'query' ? 'query: ' : 'passage: ';
+    const out = await pipe(texts.map((t) => head + t), { pooling: 'mean', normalize: true });
     self.postMessage({ id, vectors: out.tolist() });
   } catch (err) {
     ready = null;

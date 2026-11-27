@@ -1,14 +1,19 @@
 // データの出し入れ。本番は Supabase、?demo を付けて開くとブラウザ内だけの試し用。
 
-const COLS = 'id, body, created_at, group_id, seq, source, lens, pinned_at, resolved_at, handoff, handoff_done_at, book_id, scene, image_path, pos_x, pos_y, kind_fix, kind_learned';
-const flat = (rows) => (rows || []).map((r) => ({ ...r.item, similarity: r.similarity, literal: r.literal }));
-const BUCKET = 'photos';
+const EMB_TABLES = ['cards', 'paras', 'stickies', 'kakera'];
+const vec = (e) => (typeof e === 'string' ? JSON.parse(e) : e);
 
 export function supabaseStore(sb) {
   const must = ({ data, error }) => { if (error) throw error; return data; };
-  let uid = null;
-  const me = async () => uid || (uid = (await sb.auth.getUser()).data.user.id);
-  const urlCache = new Map();
+  const all = async (q) => {   // 1000行ずつ全部
+    const out = [];
+    for (let from = 0; from < 50000; from += 1000) {
+      const part = must(await q().range(from, from + 999));
+      out.push(...part);
+      if (part.length < 1000) break;
+    }
+    return out;
+  };
   return {
     kind: 'supabase',
     async session() { return (await sb.auth.getSession()).data.session; },
@@ -16,129 +21,61 @@ export function supabaseStore(sb) {
     async signIn(email, password) { must(await sb.auth.signInWithPassword({ email, password })); },
     async signOut() { await sb.auth.signOut(); },
 
-    // ---- かけら ----
-    async insert(rows) { return must(await sb.from('kakera').insert(rows).select(COLS)); },
-    async restore(rows) { must(await sb.from('kakera').insert(rows)); },
-    async remove(id) {
-      const row = must(await sb.from('kakera').select(COLS + ', embedding, source_ref').eq('id', id).single());
-      must(await sb.from('kakera').delete().eq('id', id));
-      return row;
+    // ---- 書庫の場所 ----
+    async nodes() { return all(() => sb.from('nodes').select('*').order('sort')); },
+    async seedNodes(rows) { if (rows.length) must(await sb.from('nodes').upsert(rows, { onConflict: 'user_id,key' })); },
+    async touchNode(id) { must(await sb.from('nodes').update({ opened_at: new Date().toISOString() }).eq('id', id)); },
+
+    // ---- 箱の中身 ----
+    async sections(boxId) { return must(await sb.from('sections').select('*').eq('box_id', boxId).order('seq')); },
+    async allSections() { return all(() => sb.from('sections').select('id, box_id, seq, title, phase, want, ok_at').order('seq')); },
+    async patchSection(id, f) { must(await sb.from('sections').update(f).eq('id', id)); },
+    async paras(boxId) { return must(await sb.from('paras').select('id, box_id, section_id, seq, label, body').eq('box_id', boxId).order('seq')); },
+    async cards(boxId) {
+      return must(await sb.from('cards').select('id, box_id, kind, section_id, seq, body, axis, labels, para_ids, tags, ok_at, created_at, updated_at')
+        .or(`box_id.eq.${boxId},tags.cs.{${boxId}}`).order('seq').order('created_at'));
     },
-    async patch(id, fields) { must(await sb.from('kakera').update(fields).eq('id', id)); },
-    async recent(before, limit, lens, since) {
-      let q = sb.from('kakera').select(COLS).order('created_at', { ascending: false }).order('seq').limit(limit);
-      if (before) q = q.lt('created_at', before);
-      if (since) q = q.gte('created_at', since);
-      if (lens) q = q.eq('lens', lens);
-      return must(await q);
-    },
-    async between(from, to) {
-      return must(await sb.from('kakera').select(COLS).gte('created_at', from).lt('created_at', to)
-        .order('created_at', { ascending: false }).order('seq').limit(300));
-    },
-    async pins() { return must(await sb.from('kakera').select(COLS).not('pinned_at', 'is', null).order('pinned_at', { ascending: false }).limit(50)); },
-    async setResolved(id) { must(await sb.from('kakera').update({ resolved_at: new Date().toISOString() }).eq('id', id)); },
-    async setPin(id, on) { must(await sb.from('kakera').update({ pinned_at: on ? new Date().toISOString() : null }).eq('id', id)); },
-    async siblings(groupId) { return must(await sb.from('kakera').select(COLS).eq('group_id', groupId).order('seq')); },
-    async match(vec, n, excludeGroup) {
-      return flat(must(await sb.rpc('match_kakera', { q_emb: JSON.stringify(vec), n, exclude_group: excludeGroup || null })));
-    },
-    async related(id, n) { return flat(must(await sb.rpc('related_kakera', { target: id, n }))); },
-    async search(q, vec, n, lens) {
-      return flat(must(await sb.rpc('search_kakera', { q, q_emb: JSON.stringify(vec), n, lens_filter: lens || null })));
-    },
-    async byScene(words, limit) {
-      let q = sb.from('kakera').select(COLS).order('created_at', { ascending: false }).limit(limit);
-      for (const w of words) q = q.ilike('scene', `%${w}%`);
-      return must(await q);
-    },
-    async handoffs() {
-      return must(await sb.from('kakera').select(COLS).eq('handoff', true).is('handoff_done_at', null).order('created_at', { ascending: false }).limit(100));
-    },
-    async unresolvedCandidates() {
-      return must(await sb.from('kakera').select(COLS).eq('source', 'hand').is('resolved_at', null)
-        .or('body.ilike.*？*,body.ilike.*?*,body.ilike.*あやしい*,body.ilike.*怪しい*,body.ilike.*わからない*,body.ilike.*分からない*,body.ilike.*要確認*')
-        .order('created_at', { ascending: false }).limit(200));
-    },
-    async ofBook(bookId) { return must(await sb.from('kakera').select(COLS).eq('book_id', bookId).order('created_at')); },
-    async updateBody(id, body) { must(await sb.from('kakera').update({ body, embedding: null }).eq('id', id)); },
+    async cardMeta() { return all(() => sb.from('cards').select('id, box_id, kind, axis, ok_at, created_at')); },
+    async addCard(row) { return must(await sb.from('cards').insert(row).select().single()); },
+    async patchCard(id, f) { must(await sb.from('cards').update({ ...f, updated_at: new Date().toISOString() }).eq('id', id)); },
+    async removeCard(id) { must(await sb.from('cards').delete().eq('id', id)); },
+
+    // ---- 付箋 ----
+    async stickies() { return must(await sb.from('stickies').select('id, body, hint_box, created_at').order('created_at', { ascending: false })); },
+    async addSticky(body) { return must(await sb.from('stickies').insert({ body }).select('id, body, hint_box, created_at').single()); },
+    async removeSticky(id) { must(await sb.from('stickies').delete().eq('id', id)); },
+
+    // ---- つながり ----
+    async links(boxId) { return must(await sb.from('links').select('*').or(`a.eq.${boxId},b.eq.${boxId}`)); },
+    async addLink(a, b) { must(await sb.from('links').upsert({ a, b }, { onConflict: 'user_id,a,b', ignoreDuplicates: true })); },
+    async removeLink(id) { must(await sb.from('links').delete().eq('id', id)); },
+    async nearBoxes(boxId, n = 4) { return must(await sb.rpc('near_boxes', { box: boxId, n })); },
+
+    // ---- 探す ----
+    async search(q, v, n = 40) { return must(await sb.rpc('vsearch', { q, q_emb: v ? JSON.stringify(v) : null, n })); },
+
+    // ---- 意味の計算待ち ----
     async pending(limit) {
-      return must(await sb.from('kakera').select('id, body, source, lens, group_id, seq, handoff, kind_fix')
-        .or('embedding.is.null,lens.is.null,and(lens.eq.daily,source.in.(gmail,yahoo))').limit(limit));
-    },
-    async setEmbedding(id, vec, fields = {}) {
-      must(await sb.from('kakera').update({ embedding: JSON.stringify(vec), ...fields }).eq('id', id));
-    },
-    async unplaced(limit) {
-      return must(await sb.from('kakera').select('id').is('pos_x', null).eq('seq', 0).not('embedding', 'is', null)
-        .order('created_at').limit(limit));
-    },
-    async stars() {
-      return must(await sb.from('kakera').select('id, body, created_at, source, lens, handoff, handoff_done_at, resolved_at, pos_x, pos_y, kind_fix, kind_learned')
-        .not('pos_x', 'is', null).eq('seq', 0).order('created_at', { ascending: false }).limit(5000));
-    },
-    // 自分で選び直した種類の例（意味つき）。ids を渡すとそのかけらだけ
-    async kindExamples(ids) {
-      let q = sb.from('kakera').select('id, kind_fix, embedding').not('kind_fix', 'is', null).not('embedding', 'is', null)
-        .order('created_at', { ascending: false }).limit(300);
-      if (ids) q = q.in('id', ids);
-      return must(await q).map((r) => ({ id: r.id, k: r.kind_fix, v: typeof r.embedding === 'string' ? JSON.parse(r.embedding) : r.embedding }));
-    },
-    async existingRefs(source) {
-      return new Set(must(await sb.from('kakera').select('source_ref').eq('source', source).not('source_ref', 'is', null).limit(20000)).map((r) => r.source_ref));
-    },
-
-    // ---- 英単語 ----
-    async bumpWords(ws, origin, kakeraId) { if (ws.length) must(await sb.rpc('bump_words', { ws, src: origin, kid: kakeraId })); },
-    async wordOfDay(today) {
-      const done = must(await sb.from('words').select('*').eq('last_seen', today).limit(1));
-      if (done.length) return { w: done[0], answered: done[0].due > today || done[0].status === 'known' };
-      const cands = must(await sb.from('words').select('*').eq('status', 'learning').lte('due', today)
-        .or('origin.eq.mine,freq.gte.2').order('due').limit(200));
-      return { w: pickWord(cands), answered: false };
-    },
-    async touchWord(word, patch) { must(await sb.from('words').update(patch).eq('word', word)); },
-    async examples(word) {
-      const re = `\\m${word}(s|es|ed|d|ing)?\\M`;
-      return must(await sb.from('kakera').select('id, body, created_at, source').in('source', ['gmail', 'yahoo'])
-        .filter('body', 'imatch', re).order('created_at', { ascending: false }).limit(12));
-    },
-    async kakera(id) { return must(await sb.from('kakera').select(COLS).eq('id', id).maybeSingle()); },
-
-    // ---- 柱 ----
-    async pillars() { return must(await sb.from('pillars').select('*').order('name')); },
-    async savePillar(p) {
-      const row = { name: p.name, kind: p.kind || 'subject', sections: p.sections, source: p.source || 'hand', updated_at: new Date().toISOString() };
-      if (p.id) return must(await sb.from('pillars').update(row).eq('id', p.id).select().single());
-      return must(await sb.from('pillars').upsert(row, { onConflict: 'user_id,name' }).select().single());
-    },
-    async removePillar(id) { must(await sb.from('pillars').delete().eq('id', id)); },
-
-    // ---- 本 ----
-    // ---- ページ（研修・本）。テーブルは books のまま、かけらの book_id がページ ----
-    async books() { return must(await sb.from('books').select('*').order('opened_at', { ascending: false })); },
-    async addBook(b) { return must(await sb.from('books').insert(b).select().single()); },
-    async patchBook(id, fields) { must(await sb.from('books').update(fields).eq('id', id)); },
-    async removeBook(id) {
-      must(await sb.from('kakera').update({ book_id: null }).eq('book_id', id));
-      must(await sb.from('books').delete().eq('id', id));
-    },
-    // ページの中で探すための意味（ページのかけらだけ）
-    async pageVecs(bookId) {
-      return must(await sb.from('kakera').select('id, embedding').eq('book_id', bookId).not('embedding', 'is', null).limit(2000))
-        .map((r) => ({ id: r.id, v: typeof r.embedding === 'string' ? JSON.parse(r.embedding) : r.embedding }));
-    },
-    // 俯瞰モード：投げ込みごとに1行（種類の色とページを見るだけ）。1000行ずつ取る
-    async overview() {
       const out = [];
-      for (let from = 0; from < 20000; from += 1000) {
-        const part = must(await sb.from('kakera').select('id, body, created_at, source, lens, handoff, handoff_done_at, resolved_at, kind_fix, kind_learned, book_id')
-          .eq('seq', 0).order('created_at', { ascending: false }).range(from, from + 999));
-        out.push(...part);
-        if (part.length < 1000) break;
+      for (const t of EMB_TABLES) {
+        if (out.length >= limit) break;
+        const rows = must(await sb.from(t).select('id, body').is('embedding', null).limit(limit - out.length));
+        out.push(...rows.map((r) => ({ ...r, t })));
       }
       return out;
     },
+    async setEmbedding(t, id, v) { must(await sb.from(t).update({ embedding: JSON.stringify(v) }).eq('id', id)); },
+
+    // ---- 前の泉のかけら ----
+    async kakera(id) { return must(await sb.from('kakera').select('id, body, created_at, source, group_id, seq').eq('id', id).maybeSingle()); },
+    async siblings(g) { return must(await sb.from('kakera').select('id, body, seq').eq('group_id', g).order('seq')); },
+    async unfiled(limit, before) {
+      let q = sb.from('kakera').select('id, body, created_at, source, group_id').is('filed_at', null).eq('seq', 0).order('created_at', { ascending: false }).limit(limit);
+      if (before) q = q.lt('created_at', before);
+      return must(await q);
+    },
+    async fileKakera(ids) { must(await sb.from('kakera').update({ filed_at: new Date().toISOString() }).in('id', ids)); },
+    async unfiledCount() { const { count, error } = await sb.from('kakera').select('id', { count: 'exact', head: true }).is('filed_at', null).eq('seq', 0); if (error) throw error; return count || 0; },
 
     // ---- ちょっとした状態 ----
     async kvGet(key) { return (must(await sb.from('kv').select('value').eq('key', key).maybeSingle()) || {}).value ?? null; },
@@ -146,130 +83,74 @@ export function supabaseStore(sb) {
       if (value === null) { must(await sb.from('kv').delete().eq('key', key)); return; }
       must(await sb.from('kv').upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'user_id,key' }));
     },
-
-    // ---- 写真 ----
-    async uploadPhoto(id, full, thumb) {
-      const base = `${await me()}/${id}`;
-      must(await sb.storage.from(BUCKET).upload(base + '.jpg', full, { contentType: 'image/jpeg', upsert: true }));
-      must(await sb.storage.from(BUCKET).upload(base + '_t.jpg', thumb, { contentType: 'image/jpeg', upsert: true }));
-      return base + '.jpg';
-    },
-    async photoUrls(paths) {
-      const need = paths.filter((p) => p && !urlCache.has(p));
-      if (need.length) {
-        const res = must(await sb.storage.from(BUCKET).createSignedUrls(need, 60 * 60 * 6));
-        for (const r of res) if (r.signedUrl) urlCache.set(r.path, r.signedUrl);
-      }
-      return Object.fromEntries(paths.map((p) => [p, urlCache.get(p)]));
-    },
-    async removePhoto(path) {
-      if (path) await sb.storage.from(BUCKET).remove([path, path.replace(/\.jpg$/, '_t.jpg')]);
-    },
   };
 }
 
 // ---- 試し用（?demo）：同じ動きをブラウザのメモリだけで ----
 export function memoryStore() {
-  let rows = [], words = [], pillarRows = [], bookRows = [];
-  const kv = new Map(), photos = new Map();
+  const T = { nodes: [], sections: [], paras: [], cards: [], stickies: [], links: [], kakera: [] };
+  const kv = new Map();
+  const id = () => crypto.randomUUID();
+  const now = () => new Date().toISOString();
   const dot = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * b[i]; return s; };
-  const pub = (r) => { const { embedding, source_ref, ...rest } = r; return rest; };
-  const desc = (a, b) => b.created_at.localeCompare(a.created_at) || a.seq - b.seq;
-  const near = (vec, n, ex) => rows.filter((r) => r.embedding && r.group_id !== ex)
-    .map((r) => ({ ...pub(r), similarity: dot(vec, r.embedding) }))
-    .sort((a, b) => b.similarity - a.similarity).slice(0, n);
-  const find = (id) => rows.find((x) => x.id === id);
-  const blank = { seq: 0, source: 'hand', lens: null, pinned_at: null, resolved_at: null, handoff: false, handoff_done_at: null, book_id: null, scene: null, image_path: null, pos_x: null, pos_y: null, kind_fix: null, kind_learned: null };
+  const pub = (r) => { const { embedding, ...rest } = r; return rest; };
+  const find = (t, x) => T[t].find((r) => r.id === x);
   return {
-    kind: 'memory',
+    kind: 'memory', T,
     async session() { return { user: { email: 'demo' } }; },
     onAuth() {}, async signIn() {}, async signOut() {},
-    async insert(list) {
-      const out = list.map((r) => ({ id: crypto.randomUUID(), created_at: r.created_at || new Date().toISOString(), ...blank, ...r,
-        embedding: r.embedding ? JSON.parse(r.embedding) : null }));
-      rows.push(...out); return out.map(pub);
-    },
-    async restore(list) { rows.push(...list); },
-    async remove(id) { const r = find(id); rows = rows.filter((x) => x.id !== id); return r; },
-    async patch(id, fields) { Object.assign(find(id) || {}, fields); },
-    async recent(before, limit, lens, since) {
-      return rows.filter((r) => (!before || r.created_at < before) && (!since || r.created_at >= since) && (!lens || r.lens === lens))
-        .sort(desc).slice(0, limit).map(pub);
-    },
-    async between(from, to) { return rows.filter((r) => r.created_at >= from && r.created_at < to).sort(desc).map(pub); },
-    async pins() { return rows.filter((r) => r.pinned_at).sort((a, b) => b.pinned_at.localeCompare(a.pinned_at)).map(pub); },
-    async setResolved(id) { const r = find(id); if (r) r.resolved_at = new Date().toISOString(); },
-    async setPin(id, on) { const r = find(id); if (r) r.pinned_at = on ? new Date().toISOString() : null; },
-    async siblings(g) { return rows.filter((r) => r.group_id === g).sort((a, b) => a.seq - b.seq).map(pub); },
-    async match(vec, n, ex) { return near(vec, n, ex); },
-    async related(id, n) { const t = find(id); return t && t.embedding ? near(t.embedding, n, t.group_id) : []; },
-    async search(q, vec, n, lens) {
-      const ql = q.toLowerCase();
-      return rows.filter((r) => r.embedding && (!lens || r.lens === lens)).map((r) => {
-        const literal = r.body.toLowerCase().includes(ql);
-        return { ...pub(r), similarity: dot(vec, r.embedding), literal };
-      }).sort((a, b) => (b.similarity + (b.literal ? 0.05 : 0)) - (a.similarity + (a.literal ? 0.05 : 0))).slice(0, n);
-    },
-    async byScene(ws, limit) { return rows.filter((r) => r.scene && ws.every((w) => r.scene.includes(w))).sort(desc).slice(0, limit).map(pub); },
-    async handoffs() { return rows.filter((r) => r.handoff && !r.handoff_done_at).sort(desc).map(pub); },
-    async unresolvedCandidates() { return rows.filter((r) => r.source === 'hand' && !r.resolved_at).sort(desc).map(pub); },
-    async ofBook(id) { return rows.filter((r) => r.book_id === id).sort((a, b) => a.created_at.localeCompare(b.created_at)).map(pub); },
-    async updateBody(id, body) { const r = find(id); if (r) { r.body = body; r.embedding = null; } },
-    async pending(limit) {
-      return rows.filter((r) => !r.embedding || !r.lens || (r.lens === 'daily' && (r.source === 'gmail' || r.source === 'yahoo'))).slice(0, limit)
-        .map(({ id, body, source, lens, group_id, seq, handoff, kind_fix }) => ({ id, body, source, lens, group_id, seq, handoff, kind_fix }));
-    },
-    async setEmbedding(id, vec, fields = {}) { const r = find(id); if (r) Object.assign(r, { embedding: vec }, fields); },
-    async unplaced(limit) { return rows.filter((r) => r.pos_x == null && r.seq === 0 && r.embedding).sort((a, b) => a.created_at.localeCompare(b.created_at)).slice(0, limit).map((r) => ({ id: r.id })); },
-    async stars() { return rows.filter((r) => r.pos_x != null && r.seq === 0).map(pub); },
-    async kindExamples(ids) {
-      return rows.filter((r) => r.kind_fix && r.embedding && (!ids || ids.includes(r.id))).map((r) => ({ id: r.id, k: r.kind_fix, v: r.embedding }));
-    },
-    async existingRefs(source) { return new Set(rows.filter((r) => r.source === source && r.source_ref).map((r) => r.source_ref)); },
-    async bumpWords(ws, origin, kid) {
-      for (const w0 of ws) {
-        const w = w0.toLowerCase(); const o = words.find((x) => x.word === w);
-        if (o) { o.freq++; if (origin === 'mine') { o.origin = 'mine'; o.kakera_id = kid; } }
-        else words.push({ word: w, origin, kakera_id: kid, freq: 1, status: 'learning', step: 0, due: '2000-01-01', last_seen: null });
+    async nodes() { return T.nodes.slice().sort((a, b) => a.sort.localeCompare(b.sort)).map(pub); },
+    async seedNodes(rows) { for (const r of rows) { const o = T.nodes.find((n) => n.key === r.key); if (o) Object.assign(o, r); else T.nodes.push({ id: id(), opened_at: null, created_at: now(), ...r }); } },
+    async touchNode(x) { const n = find('nodes', x); if (n) n.opened_at = now(); },
+    async sections(b) { return T.sections.filter((s) => s.box_id === b).sort((a, c) => a.seq - c.seq).map(pub); },
+    async allSections() { return T.sections.map(pub); },
+    async patchSection(x, f) { Object.assign(find('sections', x) || {}, f); },
+    async paras(b) { return T.paras.filter((p) => p.box_id === b).sort((a, c) => a.seq - c.seq).map(pub); },
+    async cards(b) { return T.cards.filter((c) => c.box_id === b || (c.tags || []).includes(b)).sort((a, c) => a.seq - c.seq || a.created_at.localeCompare(c.created_at)).map(pub); },
+    async cardMeta() { return T.cards.map(({ id: i, box_id, kind, axis, ok_at, created_at }) => ({ id: i, box_id, kind, axis, ok_at, created_at })); },
+    async addCard(row) { const r = { id: id(), seq: 0, labels: [], para_ids: [], tags: [], ok_at: null, created_at: now(), updated_at: now(), embedding: null, section_id: null, axis: null, ...row }; T.cards.push(r); return pub(r); },
+    async patchCard(x, f) { Object.assign(find('cards', x) || {}, f, { updated_at: now() }); },
+    async removeCard(x) { T.cards = T.cards.filter((c) => c.id !== x); },
+    async stickies() { return T.stickies.slice().sort((a, b) => b.created_at.localeCompare(a.created_at)).map(pub); },
+    async addSticky(body) { const r = { id: id(), body, hint_box: null, created_at: now(), embedding: null }; T.stickies.push(r); return pub(r); },
+    async removeSticky(x) { T.stickies = T.stickies.filter((s) => s.id !== x); },
+    async links(b) { return T.links.filter((l) => l.a === b || l.b === b); },
+    async addLink(a, b) { if (!T.links.some((l) => l.a === a && l.b === b)) T.links.push({ id: id(), a, b, created_at: now() }); },
+    async removeLink(x) { T.links = T.links.filter((l) => l.id !== x); },
+    async nearBoxes(b, n = 4) {
+      const mine = [...T.cards, ...T.paras].filter((r) => r.box_id === b && r.embedding);
+      const per = new Map();
+      for (const o of [...T.cards, ...T.paras]) {
+        if (o.box_id === b || !o.embedding) continue;
+        for (const m of mine) { if (!per.has(o.box_id)) per.set(o.box_id, []); per.get(o.box_id).push(dot(o.embedding, m.embedding)); }
       }
+      return [...per].map(([box_id, l]) => { const t = l.sort((x, y) => y - x).slice(0, 3); return { box_id, sim: t.reduce((a, x) => a + x, 0) / t.length }; })
+        .sort((a, c) => c.sim - a.sim).slice(0, n);
     },
-    async wordOfDay(today) {
-      const done = words.find((w) => w.last_seen === today);
-      if (done) return { w: done, answered: done.due > today || done.status === 'known' };
-      return { w: pickWord(words.filter((w) => w.status === 'learning' && w.due <= today && (w.origin === 'mine' || w.freq >= 2))), answered: false };
+    async search(q, v, n = 40) {
+      const ql = q.toLowerCase();
+      const rows = [
+        ...T.cards.map((r) => ({ src: 'card', ...r })), ...T.paras.map((r) => ({ src: 'para', ...r })),
+        ...T.stickies.map((r) => ({ src: 'sticky', ...r, box_id: r.hint_box })), ...T.kakera.filter((k) => !k.filed_at).map((r) => ({ src: 'kakera', ...r, box_id: null })),
+      ].map((r) => ({ src: r.src, id: r.id, box_id: r.box_id, section_id: r.section_id || null, body: r.body, created_at: r.created_at,
+        sim: r.embedding && v ? dot(r.embedding, v) : 0, literal: !!q && r.body.toLowerCase().includes(ql), has: !!r.embedding }))
+        .filter((r) => r.literal || (r.has && v));
+      return rows.sort((a, b) => (b.literal - a.literal) || b.sim - a.sim).slice(0, n);
     },
-    async touchWord(word, patch) { Object.assign(words.find((w) => w.word === word) || {}, patch); },
-    async examples(word) {
-      const re = new RegExp(`\\b${word}(s|es|ed|d|ing)?\\b`, 'i');
-      return rows.filter((r) => (r.source === 'gmail' || r.source === 'yahoo') && re.test(r.body)).map(pub);
+    async pending(limit) {
+      const out = [];
+      for (const t of ['cards', 'paras', 'stickies', 'kakera']) for (const r of T[t]) if (!r.embedding && out.length < limit) out.push({ t, id: r.id, body: r.body });
+      return out;
     },
-    async kakera(id) { const r = find(id); return r ? pub(r) : null; },
-    async pillars() { return pillarRows.slice().sort((a, b) => a.name.localeCompare(b.name)); },
-    async savePillar(p) {
-      let row = pillarRows.find((x) => (p.id && x.id === p.id) || (!p.id && x.name === p.name));
-      if (!row) { row = { id: crypto.randomUUID(), created_at: new Date().toISOString() }; pillarRows.push(row); }
-      Object.assign(row, { name: p.name, kind: p.kind || 'subject', sections: p.sections, source: p.source || 'hand' });
-      return row;
-    },
-    async removePillar(id) { pillarRows = pillarRows.filter((x) => x.id !== id); },
-    async books() { return bookRows.slice().sort((a, b) => b.opened_at.localeCompare(a.opened_at)); },
-    async addBook(b) { const now = new Date().toISOString(); const row = { id: crypto.randomUUID(), kind: 'book', status: 'reading', started_at: now, opened_at: now, finished_at: null, ...b }; bookRows.push(row); return row; },
-    async patchBook(id, f) { Object.assign(bookRows.find((x) => x.id === id) || {}, f); },
-    async removeBook(id) { rows.forEach((r) => { if (r.book_id === id) r.book_id = null; }); bookRows = bookRows.filter((x) => x.id !== id); },
-    async pageVecs(id) { return rows.filter((r) => r.book_id === id && r.embedding).map((r) => ({ id: r.id, v: r.embedding })); },
-    async overview() { return rows.filter((r) => r.seq === 0).sort(desc).map(pub); },
+    async setEmbedding(t, x, v) { const r = find(t, x); if (r) r.embedding = v; },
+    async kakera(x) { const r = find('kakera', x); return r ? pub(r) : null; },
+    async siblings(g) { return T.kakera.filter((k) => k.group_id === g).sort((a, b) => a.seq - b.seq).map(pub); },
+    async unfiled(limit, before) { return T.kakera.filter((k) => !k.filed_at && !k.seq && (!before || k.created_at < before)).sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, limit).map(pub); },
+    async fileKakera(ids) { for (const x of ids) { const r = find('kakera', x); if (r) r.filed_at = now(); } },
+    async unfiledCount() { return T.kakera.filter((k) => !k.filed_at && !k.seq).length; },
     async kvGet(k) { return kv.has(k) ? kv.get(k) : null; },
     async kvSet(k, v) { v === null ? kv.delete(k) : kv.set(k, v); },
-    async uploadPhoto(id, full, thumb) { const p = `demo/${id}.jpg`; photos.set(p, URL.createObjectURL(full)); photos.set(p.replace('.jpg', '_t.jpg'), URL.createObjectURL(thumb)); return p; },
-    async photoUrls(paths) { return Object.fromEntries(paths.map((p) => [p, photos.get(p)])); },
-    async removePhoto() {},
-    get _words() { return words; },
-    get _rows() { return rows; },
+    // 試し用のデータを入れる
+    put(t, rows) { const out = rows.map((r) => ({ id: id(), created_at: now(), embedding: null, ...r })); T[t].push(...out); return out; },
   };
-}
-
-// 今日の1語の選び方：復習（前に「まだ」を押したもの）→ 自分で投げた単語 → メルマガでよく出る単語
-export function pickWord(cands) {
-  const score = (w) => (w.step > 0 ? 0 : w.origin === 'mine' ? 1 : 2);
-  return cands.slice().sort((a, b) => score(a) - score(b) || (a.due < b.due ? -1 : a.due > b.due ? 1 : 0) || b.freq - a.freq)[0] || null;
 }
