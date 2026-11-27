@@ -111,7 +111,7 @@ select{width:auto}
 .gen{font:inherit;font-size:14px;font-weight:700;border:1.5px solid var(--line);background:#fff;border-radius:8px;padding:0 8px;min-height:30px;cursor:pointer;vertical-align:middle;color:var(--mute)}
 .gen.on{border-color:var(--ink);color:var(--ink)}
 .side{margin-top:6px}
-.orig{margin:6px 0;font-size:16px;color:#33373c;background:var(--card);border-radius:10px;padding:8px 12px}
+.orig{white-space:pre-line;margin:6px 0;font-size:16px;color:#33373c;background:var(--card);border-radius:10px;padding:8px 12px}
 .orig .pn{font-size:13px;color:var(--mute);margin-right:8px;font-weight:700}
 .lines.pair .line{display:grid;grid-template-columns:1fr;gap:6px;border-bottom:1px solid var(--line);padding-bottom:10px}
 @media(min-width:760px){.lines.pair .line{grid-template-columns:1fr 1fr;gap:16px}}
