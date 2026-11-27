@@ -234,16 +234,28 @@ function drawBox(focus) {
 }
 
 // ---- 私語訳を直接書く ----
-// 私語訳の文：改行はそのまま、「・」「-」で始まる行は箇条書き
+// 私語訳の文：改行はそのまま。「・」「-」で始まる行は箇条書き、「①」「1.」「(1)」で始まる行は番号つき
+const NUM_RE = /^\s*([①-⑳]|[0-9０-９]{1,2}[.．)）]|[(（][0-9０-９]{1,2}[)）])\s*(.*)$/;
+const BUL_RE = /^\s*(?:[・•●]|[-－*]\s)\s*(.*)$/;
 function trText(body) {
-  const out = []; let ul = [];
-  const flush = () => { if (ul.length) { out.push(`<ul class="trl">${ul.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`); ul = []; } };
+  const out = []; let list = null;
+  const flush = () => { if (list) { out.push(list.html + '</' + list.tag + '>'); list = null; } };
+  const open = (tag) => { if (!list || list.tag !== tag) { flush(); list = { tag, html: `<${tag} class="${tag === 'ul' ? 'trl' : 'trn'}">` }; } };
   for (const ln of String(body).split('\n')) {
-    const m = ln.match(/^\s*(?:[・•●]|[-－*]\s)\s*(.*)$/);
-    if (m) ul.push(m[1]); else { flush(); out.push(`<span class="trline">${esc(ln) || '&nbsp;'}</span>`); }
+    let m;
+    if ((m = ln.match(NUM_RE))) { open('ol'); list.html += `<li><span class="mk">${esc(m[1])}</span>${esc(m[2])}</li>`; }
+    else if ((m = ln.match(BUL_RE))) { open('ul'); list.html += `<li>${esc(m[1])}</li>`; }
+    else { flush(); out.push(`<span class="trline">${esc(ln) || '&nbsp;'}</span>`); }
   }
   flush();
   return out.join('');
+}
+// 番号の次：① → ②、1. → 2.、(1) → (2)
+function nextNum(mk) {
+  const c = mk.charCodeAt(0);
+  if (c >= 0x2460 && c < 0x2473) return String.fromCharCode(c + 1);
+  const n = parseInt(z2h(mk).replace(/[^0-9]/g, ''), 10) + 1;
+  return z2h(mk).startsWith('(') || mk.startsWith('（') ? `(${n})` : `${n}.`;
 }
 const z2h = (x) => x.replace(/[０-９Ａ-Ｚ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0)).replace(/[－‐]/g, '-');
 function refsOf(c) {   // 行がつながっている原文の項番号
@@ -254,7 +266,7 @@ function trForm(secId, c, paraId) {
   const refs = paraId ? '' : `<label class="small-l" for="trRefs">元にした原文の項（なくてもいい）</label><input type="text" id="trRefs" name="refs" placeholder="例：47, A136" value="${esc(refsOf(c))}" autocomplete="off">`;
   return `<form class="trform" data-form="trans" data-sec="${secId}"${paraId ? ` data-para="${paraId}"` : ''}${c ? ` data-edit="${c.id}"` : ''}>`
     + `<label class="sr" for="trBody">私語訳</label><textarea id="trBody" name="body" rows="8" placeholder="自分の言葉で（改行できる）">${esc(c ? c.body : '')}</textarea>` + refs
-    + `<div class="row">${c ? `<button type="button" class="btn ghost small danger" data-act="trDel" data-id="${c.id}">消す</button>` : ''}<button type="button" class="btn ghost small" data-act="bullet" aria-label="箇条書きにする">・ 箇条書き</button><span class="grow"></span><button type="button" class="btn ghost small" data-act="trCancel">やめる</button><button class="btn small">${c ? '直す' : '書く'}</button></div></form>`;
+    + `<div class="row">${c ? `<button type="button" class="btn ghost small danger" data-act="trDel" data-id="${c.id}">消す</button>` : ''}<button type="button" class="btn ghost small" data-act="bullet" aria-label="箇条書きにする">・ 箇条書き</button><button type="button" class="btn ghost small" data-act="numbered" aria-label="番号をつける">① 番号</button><span class="grow"></span><button type="button" class="btn ghost small" data-act="trCancel">やめる</button><button class="btn small">${c ? '直す' : '書く'}</button></div></form>`;
 }
 
 // ---- 原文マーカー（箱ごとに kv 'marks:<箱>' へ。{段落id: [{s,e,t}]}） ----
@@ -715,6 +727,15 @@ document.addEventListener('click', async (e) => {
         else { t.value = v.slice(0, st) + '・ ' + v.slice(st); t.setSelectionRange(at + 2, at + 2); }
         t.focus(); return;
       }
+      case 'numbered': {   // 今の行の頭に、上の行の続きの番号をつける（ついていたら外す）
+        const t = $('trBody'); const v = t.value, at = t.selectionStart;
+        const st = v.lastIndexOf('\n', at - 1) + 1;
+        const cur = v.slice(st).split('\n')[0].match(NUM_RE);
+        if (cur) { const k = v.slice(st).indexOf(cur[2]) ; t.value = v.slice(0, st) + v.slice(st + k); t.setSelectionRange(Math.max(st, at - k), Math.max(st, at - k)); t.focus(); return; }
+        const prev = st > 0 ? v.slice(v.lastIndexOf('\n', st - 2) + 1, st - 1).match(NUM_RE) : null;
+        const mk = (prev ? nextNum(prev[1]) : '①') + ' ';
+        t.value = v.slice(0, st) + mk + v.slice(st); t.setSelectionRange(at + mk.length, at + mk.length); t.focus(); return;
+      }
       case 'goPara': e.preventDefault(); goPara(d.label); return;
       case 'copyOrig': { const p = (boxCtx ? boxCtx.paras : prepParas).find((x) => x.id === d.pid) || prepParas.find((x) => x.id === d.pid); if (p) copy(`${p.label ? p.label + '　' : ''}${p.body}`, '原文をコピーした'); return; }
       case 'copySec': { const own = boxCtx.paras.filter((p) => p.section_id === d.id); const s = boxCtx.secs.find((x) => x.id === d.id); copy(`${boxCtx.b.title}　${s.title}\n\n` + own.map((p) => `${p.label ? p.label + '　' : ''}${p.body}`).join('\n\n'), '節の原文をコピーした'); return; }
@@ -787,16 +808,18 @@ document.addEventListener('click', async (e) => {
     }
   } catch (err) { fail(err); }
 });
-// 箇条書きの行で改行したら、次の行も「・」で始める（空の「・」で改行したら箇条書きを終える）
+// 箇条書き・番号の行で改行したら、次の行も「・」や次の番号で始める（空の行で改行したら終える）
 document.addEventListener('keydown', (e) => {
   const t = e.target;
   if (t.id !== 'trBody' || e.key !== 'Enter' || e.isComposing || e.shiftKey) return;
   const v = t.value, at = t.selectionStart, st = v.lastIndexOf('\n', at - 1) + 1;
   const line = v.slice(st, at);
-  if (!/^・/.test(line)) return;
+  const num = line.match(NUM_RE);
+  if (!/^・/.test(line) && !num) return;
   e.preventDefault();
-  if (/^・\s*$/.test(line)) { t.value = v.slice(0, st) + v.slice(at); t.setSelectionRange(st, st); return; }
-  t.value = v.slice(0, at) + '\n・ ' + v.slice(t.selectionEnd); t.setSelectionRange(at + 3, at + 3);
+  if (/^・\s*$/.test(line) || (num && !num[2].trim())) { t.value = v.slice(0, st) + v.slice(at); t.setSelectionRange(st, st); return; }
+  const ins = '\n' + (num ? nextNum(num[1]) : '・') + ' ';
+  t.value = v.slice(0, at) + ins + v.slice(t.selectionEnd); t.setSelectionRange(at + ins.length, at + ins.length);
 });
 document.addEventListener('change', async (e) => {
   if (e.target.id === 'impFile' && e.target.files[0]) previewImport(await e.target.files[0].text());

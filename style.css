@@ -308,3 +308,6 @@ select{width:auto}
 .tr .trl li{margin:2px 0}
 .tr .trl li::marker{color:var(--c)}
 .tr .trbtn{display:inline-flex;gap:4px;margin-top:2px}
+.tr .trn{list-style:none;margin:2px 0 4px;padding-left:0}
+.tr .trn li{margin:2px 0;padding-left:1.6em;text-indent:-1.6em}
+.tr .trn .mk{display:inline-block;min-width:1.6em;text-indent:0;color:var(--ct);font-family:var(--num)}
