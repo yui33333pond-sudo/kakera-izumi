@@ -205,9 +205,10 @@ async function viewNode(n, my, focus) {
 let boxCtx = null;   // 開いている箱の中身
 async function viewBox(b, my, focus) {
   store.touchNode(b.id).then(() => { b.opened_at = new Date().toISOString(); }).catch(() => {});
-  const [secs, paras, cards, links] = await Promise.all([store.sections(b.id), store.paras(b.id), store.cards(b.id), store.links(b.id), loadMeta()]);
+  const [secs, paras, cards, links, mk] = await Promise.all([store.sections(b.id), store.paras(b.id), store.cards(b.id), store.links(b.id), store.kvGet('marks:' + b.id), loadMeta()]);
   if (!live(my)) return;
-  boxCtx = { b, secs, paras, cards, links, pair: false, fromSticky: hashParam('from') };
+  marks = { box: b.id, by: mk || {} };
+  boxCtx = { b, secs, paras, cards, links, pair: false, fromSticky: hashParam('from'), writing: null };
   crumbs(shelfCrumb(b));
   drawBox(focus);
   loadNear(b, my);
@@ -223,6 +224,90 @@ function drawBox(focus) {
   if (boxCtx.fromSticky) { const t = document.querySelector('#noteForm textarea'); t?.scrollIntoView({ block: 'center' }); t?.focus(); }
 }
 
+// ---- 私語訳を直接書く ----
+const z2h = (x) => x.replace(/[０-９Ａ-Ｚ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0)).replace(/[－‐]/g, '-');
+function refsOf(c) {   // 行がつながっている原文の項番号
+  const ids = new Set(c ? c.para_ids || [] : []);
+  return [...new Set(boxCtx.paras.filter((p) => ids.has(p.id)).map((p) => p.label))].join(', ');
+}
+function trForm(secId, c) {
+  return `<form class="trform" data-form="trans" data-sec="${secId}"${c ? ` data-edit="${c.id}"` : ''}>`
+    + `<label class="sr" for="trBody">私語訳</label><textarea id="trBody" name="body" rows="3" placeholder="自分の言葉で1〜2行">${esc(c ? c.body : '')}</textarea>`
+    + `<label class="small-l" for="trRefs">元にした原文の項（なくてもいい）</label><input type="text" id="trRefs" name="refs" placeholder="例：47, A136" value="${esc(refsOf(c))}" autocomplete="off">`
+    + `<div class="row">${c ? `<button type="button" class="btn ghost small danger" data-act="trDel" data-id="${c.id}">消す</button>` : ''}<span class="grow"></span><button type="button" class="btn ghost small" data-act="trCancel">やめる</button><button class="btn small">${c ? '直す' : '書く'}</button></div></form>`;
+}
+
+// ---- 原文マーカー（箱ごとに kv 'marks:<箱>' へ。{段落id: [{s,e,t}]}） ----
+let marks = { box: null, by: {} };
+function markRanges(p) {
+  const out = [];
+  for (const m of marks.by[p.id] || []) {
+    let s = m.s;
+    if (p.body.slice(m.s, m.e) !== m.t) { s = p.body.indexOf(m.t); if (s < 0) continue; }
+    out.push([s, s + m.t.length]);
+  }
+  return out.sort((a, b) => a[0] - b[0]);
+}
+function origHtml(p) {
+  let html = '', at = 0;
+  markRanges(p).forEach(([s, e], i) => {
+    if (s < at) s = at;
+    if (e <= s) return;
+    html += esc(p.body.slice(at, s)) + `<mark data-pid="${p.id}" data-mi="${i}">${esc(p.body.slice(s, e))}</mark>`;
+    at = e;
+  });
+  html += esc(p.body.slice(at));
+  return `<p class="orig" data-pid="${p.id}"><span class="pn">${esc(p.label || '')}</span><span class="ob">${html}</span></p>`;
+}
+async function saveMarks(pid, list) {
+  if (list.length) marks.by[pid] = list; else delete marks.by[pid];
+  await store.kvSet('marks:' + marks.box, Object.keys(marks.by).length ? marks.by : null);
+  const p = (boxCtx && boxCtx.b.id === marks.box ? boxCtx.paras : prepParas).find((x) => x.id === pid);
+  if (p) document.querySelectorAll(`.orig[data-pid="${pid}"]`).forEach((el) => { el.outerHTML = origHtml(p); });
+}
+let pendingMark = null, markTimer = 0;
+function markBar(text, on) { const b = $('markBtn'); b.textContent = text; b.hidden = !on; }
+document.addEventListener('selectionchange', () => {
+  const sel = getSelection();
+  clearTimeout(markTimer);
+  if (!sel.rangeCount || sel.isCollapsed) {   // ボタンを押した拍子に選択が消えることがあるので、少し待ってから隠す
+    if (pendingMark && pendingMark.add) markTimer = setTimeout(() => { if (pendingMark && pendingMark.add) { pendingMark = null; markBar('', false); } }, 600);
+    return;
+  }
+  const r = sel.getRangeAt(0);
+  const ob = (r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement)?.closest('.ob');
+  const ob2 = (r.endContainer.nodeType === 1 ? r.endContainer : r.endContainer.parentElement)?.closest('.ob');
+  if (!ob || ob !== ob2) { pendingMark = null; markBar('', false); return; }
+  const pre = document.createRange(); pre.setStart(ob, 0); pre.setEnd(r.startContainer, r.startOffset);
+  let s = pre.toString().length, t = r.toString();
+  const lead = t.length - t.trimStart().length; s += lead; t = t.trim();
+  if (!t) return;
+  pendingMark = { add: true, pid: ob.parentElement.dataset.pid, s, e: s + t.length, t };
+  markBar('マーカーを引く', true);
+});
+$('markBtn').addEventListener('pointerdown', (e) => e.preventDefault());   // 押しても選んだところを消さない
+async function applyMark() {
+  clearTimeout(markTimer);
+  const m = pendingMark; pendingMark = null; markBar('', false);
+  if (!m || !marks.box) return;
+  const cur = (marks.by[m.pid] || []).slice();
+  if (m.add) {
+    const p = (boxCtx && boxCtx.b.id === marks.box ? boxCtx.paras : prepParas).find((x) => x.id === m.pid);
+    if (!p) return;
+    const rs = [...markRanges(p), [m.s, m.e]].sort((a, b) => a[0] - b[0]);
+    const merged = [];
+    for (const r of rs) { const l = merged[merged.length - 1]; if (l && r[0] <= l[1]) l[1] = Math.max(l[1], r[1]); else merged.push(r.slice()); }
+    getSelection().removeAllRanges();
+    await saveMarks(m.pid, merged.map(([s, e]) => ({ s, e, t: p.body.slice(s, e) })));
+    toast('マーカーを引いた');
+  } else {
+    const p = (boxCtx && boxCtx.b.id === marks.box ? boxCtx.paras : prepParas).find((x) => x.id === m.pid);
+    const rs = markRanges(p).filter((_, i) => i !== m.mi);
+    await saveMarks(m.pid, rs.map(([s, e]) => ({ s, e, t: p.body.slice(s, e) })));
+    toast('マーカーを消した');
+  }
+}
+
 // 監基報：上に地図、下に節ごとの図と私語訳（行ごとに「原」で原文が開く）
 function kankiBody() {
   const { secs, paras, cards, pair } = boxCtx;
@@ -232,7 +317,7 @@ function kankiBody() {
   const state = (s) => (s.ok_at ? 'ok' : s.want ? 'want' : hasTr(s) ? 'draft' : 'none');
   const map = `<div class="map">${PHASES.map(([p, label]) => `<div class="phase"><span class="pl">${label}</span>${secs.filter((s) => s.phase === p).map((s) => `<a class="cell c-${state(s)}" href="#/n/${boxCtx.b.id}/${s.id}">${esc(short(s.title, 16))}</a>`).join('') || '<span class="cell c-none blank"></span>'}</div>`).join('')}</div>`
     + `<p class="legend"><i class="c-none"></i>まだ<i class="c-want"></i>次に埋めたい<i class="c-draft"></i>下書き<i class="c-ok"></i>納得</p>`;
-  const orig = (p) => `<p class="orig"><span class="pn">${esc(p.label || '')}</span>${esc(p.body)}</p>`;
+  const orig = origHtml;
   const sec = (s) => {
     const lines = cards.filter((c) => c.kind === 'trans' && c.section_id === s.id).sort((a, c) => a.seq - c.seq);
     const own = paras.filter((p) => p.section_id === s.id);
@@ -240,17 +325,22 @@ function kankiBody() {
     const head = `<div class="sec-h"><h2>${esc(s.title)}</h2><span class="ph">${(PHASES.find(([p]) => p === s.phase) || [])[1] || ''}</span></div>`
       + `<div class="row">${s.ok_at ? `<span class="okmark">納得 ${dlabel(s.ok_at)}</span><button class="btn ghost small" data-act="unok" data-id="${s.id}">下書きに戻す</button>`
         : `<button class="btn ghost small" data-act="want" data-id="${s.id}" aria-pressed="${!!s.want}">${s.want ? '次に埋めたい ✓' : '次に埋めたい'}</button>${lines.length ? `<button class="btn small" data-act="ok" data-id="${s.id}">納得</button>` : ''}`}</div>`;
+    const w = boxCtx.writing;
+    const writeBtn = w && w.sec === s.id && !w.card ? trForm(s.id, null) : `<button class="btn ghost small" data-act="trAdd" data-id="${s.id}">私語訳を書く</button>`;
     let inner;
     if (!lines.length) {
-      inner = `<p class="hint">私語訳はまだ。</p><button class="btn ghost small" data-act="material" data-id="${s.id}">私語訳の材料をコピー</button>`
+      inner = `<p class="hint">私語訳はまだ。</p>${writeBtn}<div class="row"><button class="btn ghost small" data-act="material" data-id="${s.id}">私語訳の材料をコピー</button></div>`
         + (own.length ? `<details class="orig-all"><summary>原文（${own.length} 段落）</summary>${own.map(orig).join('')}</details>` : '');
     } else {
       inner = (s.diagram ? renderDiagram(s.diagram) : '') + `<div class="lines${pair ? ' pair' : ''}">` + lines.map((c) => {
         const ps = (c.para_ids || []).map((x) => pById.get(x)).filter(Boolean);
+        if (w && w.card === c.id) return trForm(s.id, c);
+        const fix = `<button class="gen fix" data-act="trEdit" data-id="${c.id}" aria-label="この行を直す">直す</button>`;
         return pair
-          ? `<div class="line"><p class="tr">${esc(c.body)}</p><div class="side">${ps.map(orig).join('') || '<p class="hint small">（原文の段落なし）</p>'}</div></div>`
-          : `<div class="line"><p class="tr">${esc(c.body)}${ps.length ? ` <button class="gen" data-act="gen" aria-expanded="false" aria-label="原文を開く">原</button>` : ''}</p><div class="side" hidden>${ps.map(orig).join('')}</div></div>`;
-      }).join('') + '</div>';
+          ? `<div class="line"><p class="tr">${esc(c.body)} ${fix}</p><div class="side">${ps.map(orig).join('') || '<p class="hint small">（原文の段落なし）</p>'}</div></div>`
+          : `<div class="line"><p class="tr">${esc(c.body)}${ps.length ? ` <button class="gen" data-act="gen" aria-expanded="false" aria-label="原文を開く">原</button>` : ''} ${fix}</p><div class="side" hidden>${ps.map(orig).join('')}</div></div>`;
+      }).join('') + '</div>' + writeBtn
+        + (own.length ? `<details class="orig-all"><summary>この節の原文（${own.length} 段落）</summary>${own.map(orig).join('')}</details>` : '');
     }
     return `<section class="sec s-${st}" id="sec-${s.id}">${head}${inner}</section>`;
   };
@@ -306,10 +396,12 @@ async function loadNear(b, my) {
 }
 
 // ---- 予習：前に悩んだこと（追記）→ 図 → 原文 ----
+let prepParas = [];
 async function viewPrep(b, my) {
   if (!b) { location.hash = '#/'; return; }
-  const [secs, paras, cards] = await Promise.all([store.sections(b.id), store.paras(b.id), store.cards(b.id)]);
+  const [secs, paras, cards, mk] = await Promise.all([store.sections(b.id), store.paras(b.id), store.cards(b.id), store.kvGet('marks:' + b.id)]);
   if (!live(my)) return;
+  marks = { box: b.id, by: mk || {} }; prepParas = paras;
   crumbs([...shelfCrumb(b).slice(0, -1), { t: b.title, href: `#/n/${b.id}` }, { t: '予習' }]);
   const notes = cards.filter((c) => c.kind === 'note').sort((a, c) => c.created_at.localeCompare(a.created_at));
   const rows = cards.filter((c) => c.kind === 'row' && c.box_id === b.id).sort((a, c) => (c.labels || []).includes('abunai') - (a.labels || []).includes('abunai'));
@@ -318,7 +410,7 @@ async function viewPrep(b, my) {
   html += `<section><h2>前に悩んだこと</h2>${notes.length ? `<div class="stack">${notes.map((n) => `<div class="note"><span class="d">${dlabel(n.created_at)}</span><p>${esc(n.body)}</p></div>`).join('')}</div>` : '<p class="hint small">追記はまだない。</p>'}</section>`;
   if (dgs.length) html += `<section><h2>図</h2>${dgs.map((s) => `<h3>${esc(s.title)}</h3>${renderDiagram(s.diagram)}`).join('')}</section>`;
   if (rows.length) html += `<section><h2>危ないところから</h2>${rows.map((r) => `<div class="krow${r.ok_at ? ' ok' : ''}"><div class="labs">${(r.labels || []).map(labHtml).join('')}</div><p>${esc(r.body)}</p></div>`).join('')}</section>`;
-  if (paras.length) html += `<section><h2>原文</h2><details class="orig-all"><summary>${paras.length} 段落</summary>${paras.map((p) => `<p class="orig"><span class="pn">${esc(p.label || '')}</span>${esc(p.body)}</p>`).join('')}</details></section>`;
+  if (paras.length) html += `<section><h2>原文</h2><details class="orig-all"><summary>${paras.length} 段落</summary>${paras.map(origHtml).join('')}</details></section>`;
   paint(html);
 }
 
@@ -516,6 +608,20 @@ document.addEventListener('submit', async (e) => {
       if (boxCtx.fromSticky) { await store.removeSticky(boxCtx.fromSticky); toast('追記した。付箋ははがした'); location.hash = `#/n/${boxCtx.b.id}`; }
       else { toast(editing ? '直した' : '追記した'); render(); }
       backfill();
+    } else if (f.dataset.form === 'trans') {
+      const secId = f.dataset.sec, editing = f.dataset.edit;
+      const want = String(fd.get('refs') || '').split(/[,、，\s]+/).map((x) => z2h(x).replace(/^第|項$/g, '').toUpperCase()).filter(Boolean);
+      const para_ids = boxCtx.paras.filter((p) => want.includes(String(p.label).toUpperCase())).map((p) => p.id);
+      const miss = want.filter((l) => !boxCtx.paras.some((p) => String(p.label).toUpperCase() === l));
+      if (editing) await store.patchCard(editing, { body, para_ids, labels: [], embedding: null });
+      else {
+        const seq = Math.max(0, ...boxCtx.cards.filter((c) => c.kind === 'trans' && c.section_id === secId).map((c) => c.seq || 0)) + 1;
+        await store.addCard({ box_id: boxCtx.b.id, kind: 'trans', section_id: secId, seq, body, para_ids });
+      }
+      boxCtx.writing = null;
+      boxCtx.cards = await store.cards(boxCtx.b.id); await loadMeta(); drawBox(secId);
+      toast(miss.length ? `${editing ? '直した' : '書いた'}。見つからない項：${miss.join('、')}` : editing ? '直した' : '書いた');
+      backfill();
     } else if (f.dataset.form === 'row') {
       const seq = boxCtx.cards.filter((c) => c.kind === 'row').length;
       await store.addCard({ box_id: boxCtx.b.id, kind: 'row', axis: fd.get('axis'), labels: fd.getAll('labels'), body, seq });
@@ -525,6 +631,9 @@ document.addEventListener('submit', async (e) => {
 });
 
 document.addEventListener('click', async (e) => {
+  const mk = e.target.closest('mark[data-pid]');
+  if (mk && getSelection().isCollapsed) { pendingMark = { add: false, pid: mk.dataset.pid, mi: +mk.dataset.mi }; markBar('このマーカーを消す', true); return; }
+  if (pendingMark && !pendingMark.add && !e.target.closest('#markBtn')) { pendingMark = null; markBar('', false); }
   const act = e.target.closest('[data-act]'); if (!act) return;
   const d = act.dataset;
   try {
@@ -549,6 +658,16 @@ document.addEventListener('click', async (e) => {
         if (d.sure) { await store.removeCard(d.id); boxCtx.cards = boxCtx.cards.filter((c) => c.id !== d.id); await loadMeta(); drawBox(); }
         else { d.sure = '1'; act.textContent = '消す？'; }
         return;
+      case 'trAdd': boxCtx.writing = { sec: d.id }; drawBox(d.id); $('trBody')?.focus(); return;
+      case 'trEdit': { const c = boxCtx.cards.find((x) => x.id === d.id); boxCtx.writing = { sec: c.section_id, card: c.id }; drawBox(c.section_id); $('trBody')?.focus(); return; }
+      case 'trCancel': { const sec = boxCtx.writing && boxCtx.writing.sec; boxCtx.writing = null; drawBox(sec); return; }
+      case 'trDel': {
+        if (!confirm('この行を消す？')) return;
+        const c = boxCtx.cards.find((x) => x.id === d.id);
+        await store.removeCard(d.id); boxCtx.writing = null;
+        boxCtx.cards = await store.cards(boxCtx.b.id); await loadMeta(); drawBox(c && c.section_id); toast('消した'); return;
+      }
+      case 'mark': await applyMark(); return;
       case 'material': {
         const s = boxCtx.secs.find((x) => x.id === d.id);
         const own = boxCtx.paras.filter((p) => p.section_id === s.id);

@@ -6,7 +6,7 @@
 //   "box": "kanki/200番台 総括/240",                 // 箱の場所（library.js の key）
 //   "sections": [{ "seq": 1, "title": "範囲と責任", "phase": "kamae", "diagram": {…} }],   // diagram は書いたときだけ上書き
 //   "paras":    [{ "seq": 1, "section": 1, "label": "1", "body": "原文…" }],            // section は節の seq
-//   "trans":    [{ "section": 1, "seq": 1, "body": "私語訳…", "paras": ["1", "A2"] }],  // 書いた節の私語訳は、このファイルの通りになる
+//   "trans":    [{ "section": 1, "seq": 1, "body": "私語訳…", "paras": ["1", "A2"] }],  // 書いた節の、ファイルから入れた私語訳はこの通りになる（アプリで書いた・直した行はさわらない）
 //   "rows":     [{ "axis": "jitsuzai", "labels": ["abunai"], "body": "…" }]              // 勘定科目の行。同じ軸・同じ文はとばす
 // }
 import { AXES, LABELS, PHASES } from './library.js';
@@ -57,7 +57,7 @@ export async function runImport(store, plan) {
     if (trans.length) {
       const byLabel = new Map();
       for (const p of await store.paras(b.id)) { if (!byLabel.has(p.label)) byLabel.set(p.label, []); byLabel.get(p.label).push(p.id); }
-      const cards = (await store.cards(b.id)).filter((c) => c.kind === 'trans' && c.box_id === b.id);
+      const cards = (await store.cards(b.id)).filter((c) => c.kind === 'trans' && c.box_id === b.id && (c.labels || []).includes('file'));
       const keep = new Set();
       for (const t of trans) {
         const section_id = sid(t.section);
@@ -67,7 +67,7 @@ export async function runImport(store, plan) {
           keep.add(o.id);
           if (o.body !== t.body) await store.patchCard(o.id, { body: t.body, para_ids, embedding: null });
           else if (JSON.stringify(o.para_ids || []) !== JSON.stringify(para_ids)) await store.patchCard(o.id, { para_ids });
-        } else await store.addCard({ box_id: b.id, kind: 'trans', section_id, seq: t.seq, body: t.body, para_ids });
+        } else await store.addCard({ box_id: b.id, kind: 'trans', section_id, seq: t.seq, body: t.body, para_ids, labels: ['file'] });
       }
       const touched = new Set(trans.map((t) => sid(t.section)));
       for (const c of cards) if (touched.has(c.section_id) && !keep.has(c.id)) await store.removeCard(c.id);

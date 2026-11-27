@@ -202,3 +202,12 @@ select{width:auto}
 .imp-list{padding-left:20px;margin:16px 0}
 .imp-list li{margin:4px 0}
 #impFile{font-size:16px;margin:8px 0;max-width:100%}
+.orig mark{background:#fff09a;color:inherit;border-radius:3px;padding:0 1px;cursor:pointer;box-shadow:0 2px 0 #f2d630}
+.markbtn{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom));z-index:40;font:inherit;font-size:17px;font-weight:700;background:#fff09a;color:var(--ink);border:2px solid #e3c400;border-radius:999px;padding:10px 22px;min-height:48px;box-shadow:0 4px 14px rgba(0,0,0,.18);cursor:pointer}
+.markbtn[hidden]{display:none}
+.gen.fix{font-weight:400}
+.trform{display:grid;gap:6px;margin:10px 0;padding:12px;border:2px solid var(--line);border-radius:12px;background:#fff}
+.trform .small-l{font-size:14px;color:var(--mute);margin-top:4px}
+.trform .grow{flex:1}
+.btn.danger{color:#c8321e;border-color:#f0c4bd}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
