@@ -208,11 +208,12 @@ async function viewBox(b, my, focus) {
   const [secs, paras, cards, links, mk] = await Promise.all([store.sections(b.id), store.paras(b.id), store.cards(b.id), store.links(b.id), store.kvGet('marks:' + b.id), loadMeta()]);
   if (!live(my)) return;
   marks = { box: b.id, by: mk || {} };
-  boxCtx = { b, secs, paras, cards, links, pair: false, fromSticky: hashParam('from'), writing: null };
+  boxCtx = { b, secs, paras, cards, links, pair: true, fromSticky: hashParam('from'), writing: null };
   crumbs(shelfCrumb(b));
   drawBox(focus);
   loadNear(b, my);
 }
+function redraw() { const y = scrollY; drawBox(); scrollTo(0, y); }   // 書いている場所から動かさずに描き直す
 function drawBox(focus) {
   const { b } = boxCtx, sh = shelfOf(b.shelf);
   let body = '';
@@ -230,10 +231,10 @@ function refsOf(c) {   // 行がつながっている原文の項番号
   const ids = new Set(c ? c.para_ids || [] : []);
   return [...new Set(boxCtx.paras.filter((p) => ids.has(p.id)).map((p) => p.label))].join(', ');
 }
-function trForm(secId, c) {
-  return `<form class="trform" data-form="trans" data-sec="${secId}"${c ? ` data-edit="${c.id}"` : ''}>`
-    + `<label class="sr" for="trBody">私語訳</label><textarea id="trBody" name="body" rows="3" placeholder="自分の言葉で1〜2行">${esc(c ? c.body : '')}</textarea>`
-    + `<label class="small-l" for="trRefs">元にした原文の項（なくてもいい）</label><input type="text" id="trRefs" name="refs" placeholder="例：47, A136" value="${esc(refsOf(c))}" autocomplete="off">`
+function trForm(secId, c, paraId) {
+  const refs = paraId ? '' : `<label class="small-l" for="trRefs">元にした原文の項（なくてもいい）</label><input type="text" id="trRefs" name="refs" placeholder="例：47, A136" value="${esc(refsOf(c))}" autocomplete="off">`;
+  return `<form class="trform" data-form="trans" data-sec="${secId}"${paraId ? ` data-para="${paraId}"` : ''}${c ? ` data-edit="${c.id}"` : ''}>`
+    + `<label class="sr" for="trBody">私語訳</label><textarea id="trBody" name="body" rows="3" placeholder="自分の言葉で">${esc(c ? c.body : '')}</textarea>` + refs
     + `<div class="row">${c ? `<button type="button" class="btn ghost small danger" data-act="trDel" data-id="${c.id}">消す</button>` : ''}<span class="grow"></span><button type="button" class="btn ghost small" data-act="trCancel">やめる</button><button class="btn small">${c ? '直す' : '書く'}</button></div></form>`;
 }
 
@@ -326,25 +327,33 @@ function kankiBody() {
       + `<div class="row">${s.ok_at ? `<span class="okmark">納得 ${dlabel(s.ok_at)}</span><button class="btn ghost small" data-act="unok" data-id="${s.id}">下書きに戻す</button>`
         : `<button class="btn ghost small" data-act="want" data-id="${s.id}" aria-pressed="${!!s.want}">${s.want ? '次に埋めたい ✓' : '次に埋めたい'}</button>${lines.length ? `<button class="btn small" data-act="ok" data-id="${s.id}">納得</button>` : ''}`}</div>`;
     const w = boxCtx.writing;
-    const writeBtn = w && w.sec === s.id && !w.card ? trForm(s.id, null) : `<button class="btn ghost small" data-act="trAdd" data-id="${s.id}">私語訳を書く</button>`;
+    const ownIds = new Set(own.map((p) => p.id));
+    const home = (c) => (c.para_ids || []).find((x) => ownIds.has(x)) || null;   // 行が並ぶ段落（いちばん最初につながっている段落）
+    const fix = (c) => `<button class="gen fix" data-act="trEdit" data-id="${c.id}" aria-label="この行を直す">直す</button>`;
+    const writeBtn = w && w.sec === s.id && !w.card && !w.para ? trForm(s.id, null, null) : `<button class="btn ghost small" data-act="trAdd" data-id="${s.id}">私語訳を書く</button>`;
+    const dg = s.diagram ? renderDiagram(s.diagram) : '';
+    const mat = `<div class="row"><button class="btn ghost small" data-act="material" data-id="${s.id}">私語訳の材料をコピー</button></div>`;
     let inner;
-    if (!lines.length) {
-      inner = `<p class="hint">私語訳はまだ。</p>${writeBtn}<div class="row"><button class="btn ghost small" data-act="material" data-id="${s.id}">私語訳の材料をコピー</button></div>`
-        + (own.length ? `<details class="orig-all"><summary>原文（${own.length} 段落）</summary>${own.map(orig).join('')}</details>` : '');
+    if (pair) {   // 原文に沿って、段落ごとに私語訳を対で
+      const byPara = new Map(), loose = [];
+      for (const c of lines) { const h = home(c); if (h) { if (!byPara.has(h)) byPara.set(h, []); byPara.get(h).push(c); } else loose.push(c); }
+      const line = (c) => (w && w.card === c.id ? trForm(s.id, c, home(c)) : `<p class="tr">${esc(c.body)} ${fix(c)}</p>`);
+      inner = dg + (loose.length ? `<div class="loose">${loose.map(line).join('')}</div>` : '')
+        + (own.length ? `<div class="pairs">${own.map((p) => `<div class="prow" id="p-${p.id}"><div class="po">${orig(p)}</div><div class="pt">${(byPara.get(p.id) || []).map(line).join('')}`
+          + (w && w.para === p.id && !w.card ? trForm(s.id, null, p.id) : `<button class="addtr" data-act="trAdd" data-id="${s.id}" data-para="${p.id}">＋ 私語訳</button>`) + '</div></div>').join('')}</div>` : writeBtn)
+        + (lines.length ? '' : mat);
+    } else if (!lines.length) {
+      inner = `<p class="hint">私語訳はまだ。</p>${writeBtn}${mat}`;
     } else {
-      inner = (s.diagram ? renderDiagram(s.diagram) : '') + `<div class="lines${pair ? ' pair' : ''}">` + lines.map((c) => {
+      inner = dg + '<div class="lines">' + lines.map((c) => {
         const ps = (c.para_ids || []).map((x) => pById.get(x)).filter(Boolean);
-        if (w && w.card === c.id) return trForm(s.id, c);
-        const fix = `<button class="gen fix" data-act="trEdit" data-id="${c.id}" aria-label="この行を直す">直す</button>`;
-        return pair
-          ? `<div class="line"><p class="tr">${esc(c.body)} ${fix}</p><div class="side">${ps.map(orig).join('') || '<p class="hint small">（原文の段落なし）</p>'}</div></div>`
-          : `<div class="line"><p class="tr">${esc(c.body)}${ps.length ? ` <button class="gen" data-act="gen" aria-expanded="false" aria-label="原文を開く">原</button>` : ''} ${fix}</p><div class="side" hidden>${ps.map(orig).join('')}</div></div>`;
-      }).join('') + '</div>' + writeBtn
-        + (own.length ? `<details class="orig-all"><summary>この節の原文（${own.length} 段落）</summary>${own.map(orig).join('')}</details>` : '');
+        if (w && w.card === c.id) return trForm(s.id, c, null);
+        return `<div class="line"><p class="tr">${esc(c.body)}${ps.length ? ` <button class="gen" data-act="gen" aria-expanded="false" aria-label="原文を開く">原</button>` : ''} ${fix(c)}</p><div class="side" hidden>${ps.map(orig).join('')}</div></div>`;
+      }).join('') + '</div>' + writeBtn;
     }
     return `<section class="sec s-${st}" id="sec-${s.id}">${head}${inner}</section>`;
   };
-  return map + `<div class="row"><button class="btn ghost small" data-act="pair" aria-pressed="${pair}">${pair ? '私語訳だけにする' : '対で見る'}</button></div>` + secs.map(sec).join('');
+  return map + `<div class="row"><button class="btn ghost small" data-act="pair" aria-pressed="${!pair}">${pair ? '私語訳だけ見る' : '原文と対で見る'}</button></div>` + secs.map(sec).join('');
 }
 
 // 勘定科目：アサーション軸ごとに、色ラベル付きの行
@@ -610,8 +619,9 @@ document.addEventListener('submit', async (e) => {
       backfill();
     } else if (f.dataset.form === 'trans') {
       const secId = f.dataset.sec, editing = f.dataset.edit;
-      const want = String(fd.get('refs') || '').split(/[,、，\s]+/).map((x) => z2h(x).replace(/^第|項$/g, '').toUpperCase()).filter(Boolean);
-      const para_ids = boxCtx.paras.filter((p) => want.includes(String(p.label).toUpperCase())).map((p) => p.id);
+      const para = f.dataset.para, old = editing && boxCtx.cards.find((c) => c.id === editing);
+      const want = para ? [] : String(fd.get('refs') || '').split(/[,、，\s]+/).map((x) => z2h(x).replace(/^第|項$/g, '').toUpperCase()).filter(Boolean);
+      const para_ids = para ? (old ? old.para_ids : [para]) : boxCtx.paras.filter((p) => want.includes(String(p.label).toUpperCase())).map((p) => p.id);
       const miss = want.filter((l) => !boxCtx.paras.some((p) => String(p.label).toUpperCase() === l));
       if (editing) await store.patchCard(editing, { body, para_ids, labels: [], embedding: null });
       else {
@@ -619,7 +629,7 @@ document.addEventListener('submit', async (e) => {
         await store.addCard({ box_id: boxCtx.b.id, kind: 'trans', section_id: secId, seq, body, para_ids });
       }
       boxCtx.writing = null;
-      boxCtx.cards = await store.cards(boxCtx.b.id); await loadMeta(); drawBox(secId);
+      boxCtx.cards = await store.cards(boxCtx.b.id); await loadMeta(); redraw();
       toast(miss.length ? `${editing ? '直した' : '書いた'}。見つからない項：${miss.join('、')}` : editing ? '直した' : '書いた');
       backfill();
     } else if (f.dataset.form === 'row') {
@@ -641,7 +651,7 @@ document.addEventListener('click', async (e) => {
       case 'mclose': closeModal(); return;
       case 'picked': { const cb = pickCb; closeModal(); if (cb) await cb(byId.get(d.id)); return; }
       case 'gen': { const side = act.closest('.line').querySelector('.side'); side.hidden = !side.hidden; act.setAttribute('aria-expanded', String(!side.hidden)); act.classList.toggle('on', !side.hidden); return; }
-      case 'pair': boxCtx.pair = !boxCtx.pair; drawBox(); return;
+      case 'pair': boxCtx.pair = !boxCtx.pair; redraw(); return;
       case 'want': { const s = boxCtx.secs.find((x) => x.id === d.id); s.want = !s.want; await store.patchSection(s.id, { want: s.want }); await loadMeta(); drawBox(); return; }
       case 'ok': case 'unok': {
         const s = boxCtx.secs.find((x) => x.id === d.id); const before = okTotal();
@@ -658,14 +668,14 @@ document.addEventListener('click', async (e) => {
         if (d.sure) { await store.removeCard(d.id); boxCtx.cards = boxCtx.cards.filter((c) => c.id !== d.id); await loadMeta(); drawBox(); }
         else { d.sure = '1'; act.textContent = '消す？'; }
         return;
-      case 'trAdd': boxCtx.writing = { sec: d.id }; drawBox(d.id); $('trBody')?.focus(); return;
-      case 'trEdit': { const c = boxCtx.cards.find((x) => x.id === d.id); boxCtx.writing = { sec: c.section_id, card: c.id }; drawBox(c.section_id); $('trBody')?.focus(); return; }
-      case 'trCancel': { const sec = boxCtx.writing && boxCtx.writing.sec; boxCtx.writing = null; drawBox(sec); return; }
+      case 'trAdd': boxCtx.writing = { sec: d.id, para: d.para || null }; redraw(); $('trBody')?.focus({ preventScroll: true }); return;
+      case 'trEdit': { const c = boxCtx.cards.find((x) => x.id === d.id); boxCtx.writing = { sec: c.section_id, card: c.id }; redraw(); $('trBody')?.focus({ preventScroll: true }); return; }
+      case 'trCancel': boxCtx.writing = null; redraw(); return;
       case 'trDel': {
         if (!confirm('この行を消す？')) return;
         const c = boxCtx.cards.find((x) => x.id === d.id);
         await store.removeCard(d.id); boxCtx.writing = null;
-        boxCtx.cards = await store.cards(boxCtx.b.id); await loadMeta(); drawBox(c && c.section_id); toast('消した'); return;
+        boxCtx.cards = await store.cards(boxCtx.b.id); await loadMeta(); redraw(); toast('消した'); return;
       }
       case 'mark': await applyMark(); return;
       case 'material': {

@@ -211,3 +211,13 @@ select{width:auto}
 .trform .grow{flex:1}
 .btn.danger{color:#c8321e;border-color:#f0c4bd}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.pairs{display:grid;gap:14px;margin-top:12px}
+.prow{display:grid;grid-template-columns:1fr;gap:6px}
+.prow .orig{margin:0}
+.pt{border-left:3px solid color-mix(in srgb,var(--c) 45%,#fff);padding-left:12px;margin-left:12px}
+.pt .tr,.loose .tr{margin:0 0 6px;font-size:18px;font-weight:700}
+.sec.s-draft .pt .tr,.sec.s-want .pt .tr{color:#33373c}
+.addtr{font:inherit;font-size:14px;color:var(--mute);background:none;border:1.5px dashed var(--line);border-radius:8px;padding:4px 10px;min-height:34px;cursor:pointer}
+.addtr:hover{color:var(--ink);border-color:var(--ink)}
+.loose{margin-top:10px}
+@media(min-width:760px){.prow{grid-template-columns:1fr 1fr;gap:18px}.pt{margin-left:0}}
