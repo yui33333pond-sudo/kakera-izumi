@@ -1,5 +1,6 @@
 import { supabaseStore, memoryStore } from './store.js';
 import { SHELVES, shelfOf, libraryRows, AXES, LABELS, PHASES } from './library.js';
+import { readImport, runImport } from './import.js';
 import { renderDiagram } from './diagram.js';
 import { seedDemo } from './demo.js';
 
@@ -456,6 +457,25 @@ function openModal(title, html) {
 }
 function closeModal() { $('modal').hidden = true; $('modal').innerHTML = ''; pickCb = null; }
 
+// ---- 取り込む（Claude Code が content/ に書き出したファイル） ----
+let impPlan = null;
+function openImport() {
+  impPlan = null;
+  openModal('取り込む', `<p class="hint">Claude Code が書き出したファイル（content/ の .json）を選ぶ。何度入れても同じ結果になり、納得や追記は消えない。</p>`
+    + `<input type="file" id="impFile" accept=".json,application/json" aria-label="取り込むファイル">`
+    + `<details class="imp-paste"><summary>ファイルではなく貼り付ける</summary><textarea id="impText" class="copybox" placeholder="ここに貼る"></textarea></details><div id="impPrev" aria-live="polite"></div>`);
+}
+function previewImport(text) {
+  impPlan = null;
+  try {
+    const plan = readImport(text, byKey);
+    const n = (k, x, u) => (x[k].length ? `${u} ${x[k].length}` : '');
+    $('impPrev').innerHTML = '<ul class="imp-list">' + plan.map((x) => `<li><b>${esc(x.b.title)}</b>　${[n('secs', x, '節'), n('paras', x, '段落'), n('trans', x, '私語訳'), x.diagrams ? `図 ${x.diagrams}` : '', n('rows', x, '行')].filter(Boolean).join('・') || '中身なし'}</li>`).join('') + '</ul>'
+      + '<button class="btn" data-act="impGo">入れる</button>';
+    impPlan = plan;
+  } catch (e) { $('impPrev').innerHTML = `<p class="hint">${esc(e.message)}</p>`; }
+}
+
 // ---- 意味の計算待ちを、裏で少しずつ ----
 let filling = false;
 async function backfill() {
@@ -555,12 +575,25 @@ document.addEventListener('click', async (e) => {
       case 'stDel': await store.removeSticky(d.id); toast('付箋をはがした'); location.hash = '#/'; return;
       case 'file': openPicker('納める箱を選ぶ', (b) => b && fileKakera(d.id, b)); return;
       case 'izumiMore': viewIzumi(renderSeq, true); return;
+      case 'import': openImport(); return;
+      case 'impGo': {
+        const plan = impPlan; if (!plan) return;
+        act.disabled = true; act.textContent = '入れてる…';
+        const done = await runImport(store, plan);
+        impPlan = null; closeModal(); await loadMeta(); toast(`入れた：${done.map((b) => b.title).join('、')}`); backfill();
+        const h = `#/n/${done[0].id}`; if (location.hash === h) render(); else location.hash = h;
+        return;
+      }
       case 'logout': await store.signOut(); location.reload(); return;
     }
   } catch (err) { fail(err); }
 });
+document.addEventListener('change', async (e) => {
+  if (e.target.id === 'impFile' && e.target.files[0]) previewImport(await e.target.files[0].text());
+});
 document.addEventListener('input', (e) => {
   if (e.target.id === 'pickQ') drawPick(e.target.value);
+  if (e.target.id === 'impText') { clearTimeout(qTimer); const v = e.target.value; qTimer = setTimeout(() => v.trim() && previewImport(v), 300); }
   if (e.target.id === 'q') {
     clearTimeout(qTimer);
     const v = e.target.value;

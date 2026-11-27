@@ -31,6 +31,13 @@ export function supabaseStore(sb) {
     async allSections() { return all(() => sb.from('sections').select('id, box_id, seq, title, phase, want, ok_at').order('seq')); },
     async patchSection(id, f) { must(await sb.from('sections').update(f).eq('id', id)); },
     async paras(boxId) { return must(await sb.from('paras').select('id, box_id, section_id, seq, label, body').eq('box_id', boxId).order('seq')); },
+    // 取り込み：書いた列だけ入れる（列の組が違う行は分けて送る。送らない列は今の値のまま）
+    async upsert(t, rows, onConflict) {
+      const groups = new Map();
+      for (const r of rows) { const k = Object.keys(r).sort().join(','); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); }
+      for (const g of groups.values()) for (let i = 0; i < g.length; i += 500) must(await sb.from(t).upsert(g.slice(i, i + 500), { onConflict }));
+    },
+    async trimParas(boxId, maxSeq) { must(await sb.from('paras').delete().eq('box_id', boxId).gt('seq', maxSeq)); },
     async cards(boxId) {
       return must(await sb.from('cards').select('id, box_id, kind, section_id, seq, body, axis, labels, para_ids, tags, ok_at, created_at, updated_at')
         .or(`box_id.eq.${boxId},tags.cs.{${boxId}}`).order('seq').order('created_at'));
@@ -106,6 +113,15 @@ export function memoryStore() {
     async allSections() { return T.sections.map(pub); },
     async patchSection(x, f) { Object.assign(find('sections', x) || {}, f); },
     async paras(b) { return T.paras.filter((p) => p.box_id === b).sort((a, c) => a.seq - c.seq).map(pub); },
+    async upsert(t, rows, onConflict) {
+      const cols = onConflict.split(',');
+      for (const r of rows) {
+        const o = T[t].find((x) => cols.every((c) => x[c] === r[c]));
+        if (o) Object.assign(o, r);
+        else T[t].push({ id: id(), created_at: now(), embedding: null, want: false, ok_at: null, diagram: null, ...r });
+      }
+    },
+    async trimParas(b, max) { T.paras = T.paras.filter((p) => !(p.box_id === b && p.seq > max)); },
     async cards(b) { return T.cards.filter((c) => c.box_id === b || (c.tags || []).includes(b)).sort((a, c) => a.seq - c.seq || a.created_at.localeCompare(c.created_at)).map(pub); },
     async cardMeta() { return T.cards.map(({ id: i, box_id, kind, axis, ok_at, created_at }) => ({ id: i, box_id, kind, axis, ok_at, created_at })); },
     async addCard(row) { const r = { id: id(), seq: 0, labels: [], para_ids: [], tags: [], ok_at: null, created_at: now(), updated_at: now(), embedding: null, section_id: null, axis: null, ...row }; T.cards.push(r); return pub(r); },

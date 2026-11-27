@@ -197,3 +197,8 @@ select{width:auto}
 .gate-card form{display:grid;gap:8px}
 .gate-card label{font-size:15px;color:var(--mute)}
 .gate-card .btn{justify-content:center;margin-top:8px}
+.foot [data-act=import]{margin-left:auto}
+.imp-paste summary{cursor:pointer;color:var(--mute);font-size:15px;margin:12px 0 6px}
+.imp-list{padding-left:20px;margin:16px 0}
+.imp-list li{margin:4px 0}
+#impFile{font-size:16px;margin:8px 0;max-width:100%}
