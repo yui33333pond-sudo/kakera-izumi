@@ -25,6 +25,8 @@ export function supabaseStore(sb) {
     async nodes() { return all(() => sb.from('nodes').select('*').order('sort')); },
     async seedNodes(rows) { if (rows.length) must(await sb.from('nodes').upsert(rows, { onConflict: 'user_id,key' })); },
     async touchNode(id) { must(await sb.from('nodes').update({ opened_at: new Date().toISOString() }).eq('id', id)); },
+    async patchNode(id, f) { must(await sb.from('nodes').update(f).eq('id', id)); },
+    async removeNode(id) { must(await sb.from('nodes').delete().eq('id', id)); },
 
     // ---- 箱の中身 ----
     async sections(boxId) { return must(await sb.from('sections').select('*').eq('box_id', boxId).order('seq')); },
@@ -109,6 +111,8 @@ export function memoryStore() {
     async nodes() { return T.nodes.slice().sort((a, b) => a.sort.localeCompare(b.sort)).map(pub); },
     async seedNodes(rows) { for (const r of rows) { const o = T.nodes.find((n) => n.key === r.key); if (o) Object.assign(o, r); else T.nodes.push({ id: id(), opened_at: null, created_at: now(), ...r }); } },
     async touchNode(x) { const n = find('nodes', x); if (n) n.opened_at = now(); },
+    async patchNode(x, f) { Object.assign(find('nodes', x) || {}, f); },
+    async removeNode(x) { T.nodes = T.nodes.filter((n) => n.id !== x); T.cards = T.cards.filter((c) => c.box_id !== x); },
     async sections(b) { return T.sections.filter((s) => s.box_id === b).sort((a, c) => a.seq - c.seq).map(pub); },
     async allSections() { return T.sections.map(pub); },
     async patchSection(x, f) { Object.assign(find('sections', x) || {}, f); },

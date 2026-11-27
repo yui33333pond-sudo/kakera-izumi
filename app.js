@@ -187,6 +187,7 @@ const stickyCard = (s) => `<a class="sticky-c" href="#/st/${s.id}"><span class="
 async function viewNode(n, my, focus) {
   if (!n) { location.hash = '#/'; return; }
   if (n.is_box) return viewBox(n, my, focus);
+  if (n.key === 'hon') return viewBooks(my);
   await loadMeta();
   if (!live(my)) return;
   const sh = shelfOf(n.shelf);
@@ -204,15 +205,16 @@ async function viewNode(n, my, focus) {
   paint(`<div class="shelf-head" style="${shVars(sh)}">${shapeSvg(sh.shape, sh.color, 30)}<h1>${esc(isShelf ? sh.name : n.title)}</h1></div>`
     + (direct.length ? `<div class="tiles">${direct.map(tile).join('')}</div>` : '')
     + sub.map((g) => group(g, 0)).join('')
-    + (!ch.length ? `<p class="hint">${n.shelf === 'nichijo' ? '日常の棚は月ごとに育つ（あとで作る）。' : n.shelf === 'hon' ? '本は1冊＝1箱（あとで作る）。' : 'まだ箱がない。'}</p>` : ''));
+    + (!ch.length ? `<p class="hint">${n.shelf === 'nichijo' ? '日常の棚は月ごとに育つ（あとで作る）。' : 'まだ箱がない。'}</p>` : ''));
 }
 
 // ---- 箱 ----
 let boxCtx = null;   // 開いている箱の中身
 async function viewBox(b, my, focus) {
   store.touchNode(b.id).then(() => { b.opened_at = new Date().toISOString(); }).catch(() => {});
-  const [secs, paras, cards, links, mk] = await Promise.all([store.sections(b.id), store.paras(b.id), store.cards(b.id), store.links(b.id), store.kvGet('marks:' + b.id), loadMeta()]);
+  const [secs, paras, cards, links, mk, bk] = await Promise.all([store.sections(b.id), store.paras(b.id), store.cards(b.id), store.links(b.id), store.kvGet('marks:' + b.id), b.shelf === 'hon' ? store.kvGet('books') : null, loadMeta()]);
   if (!live(my)) return;
+  books = bk || books;
   marks = { box: b.id, by: mk || {} };
   boxCtx = { b, secs, paras, cards, links, pair: true, fold: foldPref(), fromSticky: hashParam('from'), writing: null };
   crumbs(shelfCrumb(b));
@@ -226,6 +228,7 @@ function drawBox(focus) {
   let body = '';
   if (b.shelf === 'kanki') body = kankiBody();
   else if (b.shelf === 'kamoku') body = kamokuBody();
+  else if (b.shelf === 'hon') body = bookBody();
   const path = shelfCrumb(b).slice(0, -1);
   paint(`<div class="boxv" style="${shVars(sh)}"><div class="box-head"><p class="path">${path.map((x) => x.href ? `<a href="${x.href}">${esc(x.t)}</a>` : esc(x.t)).join(' › ')}</p><h1 class="glow">${esc(b.title)}</h1><div class="row"><a class="btn ghost small" href="#/prep/${b.id}">予習</a><button class="btn ghost small" data-act="link">つなぐ</button></div></div>`
     + body + notesBlock() + `<section><h2>つながり</h2><div id="links" class="links">${linksHtml([])}</div></section></div>`);
@@ -440,6 +443,49 @@ function kamokuBody() {
     + `<details class="addrow"><summary>行を足す</summary><form data-form="row"><select name="axis" aria-label="軸">${AXES.map(([k, n]) => `<option value="${k}">${n}</option>`).join('')}</select>`
     + `<div class="row">${Object.entries(LABELS).map(([k, [n]]) => `<label class="chk"><input type="checkbox" name="labels" value="${k}"> ${n}</label>`).join('')}</div>`
     + `<textarea name="body" placeholder="1〜2行で" aria-label="行の中身"></textarea><button class="btn">足す</button></form></details>`;
+}
+
+// ---- 本：1冊＝1箱。題名・著者・読み始め・読み終わり（kv 'books' に {箱id: {author, start, end}}）、中身は自由に ----
+let books = {};
+const md = (d) => (d ? d.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3') : '');
+const bookDates = (m) => (m.start ? `${md(m.start)} 〜 ${m.end ? md(m.end) : '読書中'}` : m.end ? `〜 ${md(m.end)}` : '');
+async function viewBooks(my) {
+  const bk = await store.kvGet('books');
+  await loadMeta();
+  if (!live(my)) return;
+  books = bk || {};
+  const sh = shelfOf('hon');
+  crumbs([{ t: sh.name }]);
+  const list = boxes().filter((b) => b.shelf === 'hon').map((b) => ({ b, m: books[b.id] || {} }))
+    .sort((x, y) => (y.m.start || '').localeCompare(x.m.start || '') || x.b.title.localeCompare(y.b.title));
+  const years = [...new Set(list.map((x) => (x.m.start || '').slice(0, 4) || '日付なし'))];
+  paint(`<div class="shelf-head" style="${shVars(sh)}"><h1>${sh.name}</h1></div><div class="row"><button class="btn" data-act="bookAdd">本を足す</button></div>`
+    + (list.length ? years.map((y) => `<section style="${shVars(sh)}"><p class="lbl num">${y}</p><div class="books">${list.filter((x) => ((x.m.start || '').slice(0, 4) || '日付なし') === y).map(({ b, m }) =>
+      `<a class="book neon" href="#/n/${b.id}"><b>${esc(b.title)}</b>${m.author ? `<span class="au">${esc(m.author)}</span>` : ''}<span class="dt num${m.end ? ' done' : ''}">${esc(bookDates(m))}${m.end ? '　読了' : ''}</span></a>`).join('')}</div></section>`).join('')
+      : '<p class="hint">まだ本がない。「本を足す」で1冊ずつ。</p>'));
+}
+function openBookForm(b) {
+  const m = (b && books[b.id]) || {};
+  const today = new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+  openModal(b ? '本を直す' : '本を足す', `<form class="bookform" data-form="book"${b ? ` data-edit="${b.id}"` : ''}>`
+    + `<label for="bkTitle">題名</label><input type="text" id="bkTitle" name="body" required value="${esc(b ? b.title : '')}" autocomplete="off">`
+    + `<label for="bkAuthor">著者</label><input type="text" id="bkAuthor" name="author" value="${esc(m.author || '')}" autocomplete="off">`
+    + `<div class="two"><div><label for="bkStart">読み始め</label><input type="date" id="bkStart" name="start" value="${esc(b ? m.start || '' : today)}"></div>`
+    + `<div><label for="bkEnd">読み終わり</label><input type="date" id="bkEnd" name="end" value="${esc(m.end || '')}"></div></div>`
+    + `<div class="row">${b ? `<button type="button" class="btn ghost small danger" data-act="bookDel" data-id="${b.id}">この本を消す</button>` : ''}<span class="grow"></span><button class="btn">${b ? '直す' : '足す'}</button></div></form>`);
+  $('bkTitle').focus();
+}
+function bookBody() {
+  const { b, cards } = boxCtx, m = books[b.id] || {};
+  const main = cards.find((c) => c.kind === 'trans' && c.box_id === b.id && !c.section_id);
+  const editing = boxCtx.writing && boxCtx.writing.book;
+  return `<p class="bmeta">${m.author ? `<span>${esc(m.author)}</span>` : ''}<span class="num">${esc(bookDates(m))}</span>${m.end ? '<span class="done">読了</span>' : ''}<button class="gen fix" data-act="bookEdit">直す</button></p>`
+    + `<section class="fr neon bookmain"><p class="lbl">中身</p>`
+    + (editing ? `<form class="trform" data-form="bookText"><label class="sr" for="trBody">中身</label><textarea id="trBody" name="body" rows="12" placeholder="自由に（改行・「・」・「①」が使える）">${esc(main ? main.body : '')}</textarea>`
+        + `<div class="row"><button type="button" class="btn ghost small" data-act="bullet">・ 箇条書き</button><button type="button" class="btn ghost small" data-act="numbered">① 番号</button><span class="grow"></span><button type="button" class="btn ghost small" data-act="trCancel">やめる</button><button class="btn small">しまう</button></div></form>`
+      : main ? `<div class="tr">${trText(main.body)}</div><div class="row"><button class="btn ghost small" data-act="bookWrite">書き足す・直す</button></div>`
+      : `<p class="hint">まだ何も書いていない。</p><button class="btn ghost small" data-act="bookWrite">書く</button>`)
+    + '</section>';
 }
 
 // 追記：日付つき。ほかの箱にも出すときは、向こうでは「〇〇から」
@@ -687,6 +733,27 @@ document.addEventListener('submit', async (e) => {
       if (boxCtx.fromSticky) { await store.removeSticky(boxCtx.fromSticky); toast('追記した。付箋ははがした'); location.hash = `#/n/${boxCtx.b.id}`; }
       else { toast(editing ? '直した' : '追記した'); render(); }
       backfill();
+    } else if (f.dataset.form === 'book') {
+      const edit = f.dataset.edit;
+      const meta = { author: String(fd.get('author') || '').trim(), start: fd.get('start') || '', end: fd.get('end') || '' };
+      books = (await store.kvGet('books')) || {};
+      let id = edit;
+      if (edit) await store.patchNode(edit, { title: body, sort: `003.${meta.start || '9999'}` });
+      else {
+        const key = `hon/${crypto.randomUUID().slice(0, 8)}`;
+        await store.seedNodes([{ shelf: 'hon', key, parent_key: 'hon', title: body, sort: `003.${meta.start || '9999'}`, is_box: true }]);
+        await loadLibrary(); id = byKey.get(key).id;
+      }
+      books[id] = meta; await store.kvSet('books', books);
+      await loadLibrary(); closeModal(); toast(edit ? '直した' : '本を足した');
+      const h = `#/n/${id}`; if (location.hash === h) render(); else location.hash = h;
+      return;
+    } else if (f.dataset.form === 'bookText') {
+      const main = boxCtx.cards.find((c) => c.kind === 'trans' && c.box_id === boxCtx.b.id && !c.section_id);
+      if (main) await store.patchCard(main.id, { body, embedding: null });
+      else await store.addCard({ box_id: boxCtx.b.id, kind: 'trans', seq: 0, body });
+      boxCtx.writing = null; boxCtx.cards = await store.cards(boxCtx.b.id); await loadMeta(); redraw(); toast('しまった'); backfill();
+      return;
     } else if (f.dataset.form === 'trans') {
       const secId = f.dataset.sec, editing = f.dataset.edit;
       const para = f.dataset.para, old = editing && boxCtx.cards.find((c) => c.id === editing);
@@ -735,6 +802,14 @@ document.addEventListener('click', async (e) => {
         const prev = st > 0 ? v.slice(v.lastIndexOf('\n', st - 2) + 1, st - 1).match(NUM_RE) : null;
         const mk = (prev ? nextNum(prev[1]) : '①') + ' ';
         t.value = v.slice(0, st) + mk + v.slice(st); t.setSelectionRange(at + mk.length, at + mk.length); t.focus(); return;
+      }
+      case 'bookAdd': openBookForm(null); return;
+      case 'bookEdit': openBookForm(boxCtx.b); return;
+      case 'bookWrite': boxCtx.writing = { book: true }; redraw(); $('trBody')?.focus({ preventScroll: true }); return;
+      case 'bookDel': {
+        if (!confirm('この本と、中に書いたもの（中身・追記）をぜんぶ消す？元に戻せない。')) return;
+        await store.removeNode(d.id); books = (await store.kvGet('books')) || {}; delete books[d.id]; await store.kvSet('books', books);
+        await loadLibrary(); closeModal(); toast('消した'); location.hash = '#/s/hon'; return;
       }
       case 'goPara': e.preventDefault(); goPara(d.label); return;
       case 'copyOrig': { const p = (boxCtx ? boxCtx.paras : prepParas).find((x) => x.id === d.pid) || prepParas.find((x) => x.id === d.pid); if (p) copy(`${p.label ? p.label + '　' : ''}${p.body}`, '原文をコピーした'); return; }

@@ -311,3 +311,21 @@ select{width:auto}
 .tr .trn{list-style:none;margin:2px 0 4px;padding-left:0}
 .tr .trn li{margin:2px 0;padding-left:1.6em;text-indent:-1.6em}
 .tr .trn .mk{display:inline-block;min-width:1.6em;text-indent:0;color:var(--ct);font-family:var(--num)}
+
+/* 本 */
+.books{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.book{display:grid;gap:2px;align-content:start;text-decoration:none;border-radius:12px;padding:12px;min-height:96px}
+.book b{font-size:16px;line-height:1.45;color:var(--ct)}
+.book .au{font-size:14px;color:var(--ink)}
+.book .dt{font-size:13px;color:var(--mute);margin-top:auto}
+.book .dt.done{color:var(--ct)}
+.bmeta{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:center;margin:-6px 0 14px;color:var(--ink);font-size:15px}
+.bmeta .num{color:var(--mute)}
+.bmeta .done{font-size:12px;font-weight:700;color:var(--ct);border:1px solid var(--c);background:color-mix(in srgb,var(--c) 14%,transparent);border-radius:4px;padding:0 6px}
+.bookmain .tr{font-size:17px}
+.bookform{display:grid;gap:6px}
+.bookform label{font-size:14px;color:var(--mute);margin-top:6px}
+.bookform .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.bookform .grow{flex:1}
+input[type=date]{width:100%;font:inherit;font-size:16px;border:1.5px solid var(--line);border-radius:10px;padding:9px 10px;background:var(--panel);color:var(--ink);color-scheme:dark;min-height:46px}
+.foot .btn{white-space:nowrap;flex:none}
