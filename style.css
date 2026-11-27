@@ -272,3 +272,5 @@ select{width:auto}
 .duo .krow{flex-direction:column;gap:2px}
 .duo .krow .rbtn{align-self:flex-end}
 .note .rbtn .btn{min-height:30px;font-size:13px;padding:0 10px;font-weight:500}
+.pchip{font:400 13px var(--num);color:var(--ct);border-color:color-mix(in srgb,var(--c) 50%,transparent)}
+.pbody{margin-top:6px}

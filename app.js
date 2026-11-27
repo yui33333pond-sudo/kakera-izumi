@@ -214,11 +214,12 @@ async function viewBox(b, my, focus) {
   const [secs, paras, cards, links, mk] = await Promise.all([store.sections(b.id), store.paras(b.id), store.cards(b.id), store.links(b.id), store.kvGet('marks:' + b.id), loadMeta()]);
   if (!live(my)) return;
   marks = { box: b.id, by: mk || {} };
-  boxCtx = { b, secs, paras, cards, links, pair: true, fromSticky: hashParam('from'), writing: null };
+  boxCtx = { b, secs, paras, cards, links, pair: true, fold: foldPref(), fromSticky: hashParam('from'), writing: null };
   crumbs(shelfCrumb(b));
   drawBox(focus);
   loadNear(b, my);
 }
+const foldPref = () => { try { return localStorage.getItem('yuri-fold') === '1'; } catch { return false; } };   // 原文を畳んでおくか（この端末だけ）
 function redraw() { const y = scrollY; drawBox(); scrollTo(0, y); }   // 書いている場所から動かさずに描き直す
 function drawBox(focus) {
   const { b } = boxCtx, sh = shelfOf(b.shelf);
@@ -346,7 +347,7 @@ function kankiBody() {
       for (const c of lines) { const h = home(c); if (h) { if (!byPara.has(h)) byPara.set(h, []); byPara.get(h).push(c); } else loose.push(c); }
       const line = (c) => (w && w.card === c.id ? trForm(s.id, c, home(c)) : `<p class="tr">${esc(c.body)} ${fix(c)}</p>`);
       inner = dg + (loose.length ? `<div class="loose">${loose.map(line).join('')}</div>` : '')
-        + (own.length ? `<div class="pairs">${own.map((p) => `<div class="prow" id="p-${p.id}"><div class="po">${orig(p)}</div><div class="pt">${(byPara.get(p.id) || []).map(line).join('')}`
+        + (own.length ? `<div class="pairs">${own.map((p) => `<div class="prow" id="p-${p.id}"><div class="po">${boxCtx.fold ? `<button class="gen pchip" data-act="pOpen" aria-expanded="false">原 ${esc(p.label || '')}</button><div class="pbody" hidden>${orig(p)}</div>` : orig(p)}</div><div class="pt">${(byPara.get(p.id) || []).map(line).join('')}`
           + (w && w.para === p.id && !w.card ? trForm(s.id, null, p.id) : `<button class="addtr" data-act="trAdd" data-id="${s.id}" data-para="${p.id}">＋ 私語訳</button>`) + '</div></div>').join('')}</div>` : writeBtn)
         + (lines.length ? '' : mat);
     } else if (!lines.length) {
@@ -360,7 +361,7 @@ function kankiBody() {
     }
     return `<section class="sec s-${st}" id="sec-${s.id}">${head}${inner}</section>`;
   };
-  return map + `<div class="row"><button class="btn ghost small" data-act="pair" aria-pressed="${!pair}">${pair ? '私語訳だけ見る' : '原文と対で見る'}</button></div>` + secs.map(sec).join('');
+  return map + `<div class="row"><button class="btn ghost small" data-act="pair" aria-pressed="${!pair}">${pair ? '私語訳だけ見る' : '原文と対で見る'}</button>${pair ? `<button class="btn ghost small" data-act="fold" aria-pressed="${boxCtx.fold}">${boxCtx.fold ? '原文を開く' : '原文を畳む'}</button>` : ''}</div>` + secs.map(sec).join('');
 }
 
 // 勘定科目：アサーション軸ごとに、色ラベル付きの行
@@ -657,6 +658,8 @@ document.addEventListener('click', async (e) => {
     switch (d.act) {
       case 'mclose': closeModal(); return;
       case 'picked': { const cb = pickCb; closeModal(); if (cb) await cb(byId.get(d.id)); return; }
+      case 'fold': boxCtx.fold = !boxCtx.fold; try { localStorage.setItem('yuri-fold', boxCtx.fold ? '1' : ''); } catch {} redraw(); return;
+      case 'pOpen': { const bd = act.nextElementSibling; bd.hidden = !bd.hidden; act.setAttribute('aria-expanded', String(!bd.hidden)); act.classList.toggle('on', !bd.hidden); return; }
       case 'gen': { const side = act.closest('.line').querySelector('.side'); side.hidden = !side.hidden; act.setAttribute('aria-expanded', String(!side.hidden)); act.classList.toggle('on', !side.hidden); return; }
       case 'pair': boxCtx.pair = !boxCtx.pair; redraw(); return;
       case 'want': { const s = boxCtx.secs.find((x) => x.id === d.id); s.want = !s.want; await store.patchSection(s.id, { want: s.want }); await loadMeta(); drawBox(); return; }
