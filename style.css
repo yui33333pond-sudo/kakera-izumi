@@ -274,3 +274,37 @@ select{width:auto}
 .note .rbtn .btn{min-height:30px;font-size:13px;padding:0 10px;font-weight:500}
 .pchip{font:400 13px var(--num);color:var(--ct);border-color:color-mix(in srgb,var(--c) 50%,transparent)}
 .pbody{margin-top:6px}
+
+/* 私語訳：改行そのまま、太すぎない。入力は広く */
+.tr{font-size:17px;font-weight:500;line-height:1.8;white-space:pre-line}
+.trform textarea{min-height:42vh;font-size:17px;line-height:1.8}
+/* 進捗 */
+.progress{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0 4px;font-size:15px;color:var(--mute)}
+.progress b{--ct:var(--ink);font:400 24px var(--num)}
+.progress .pc{color:var(--ct)}
+.pbar{display:inline-block;flex:1 1 120px;max-width:260px;height:4px;border-radius:2px;background:#22242C;overflow:hidden;vertical-align:middle}
+.pbar i{display:block;height:100%;background:var(--c);box-shadow:0 0 6px var(--c)}
+.cell .pbar{display:block;max-width:none;height:3px;margin-top:6px}
+.sprog{font-size:14px;color:var(--mute)}
+.sprog.full{color:var(--ct)}
+/* 対：段落ごとのカード。私語訳がついたら色が入る */
+.prow{position:relative;border:1px solid var(--line);border-radius:12px;padding:30px 10px 10px;background:rgba(244,246,250,.02)}
+.prow .plab{position:absolute;left:12px;top:6px;font-size:13px;color:var(--mute)}
+.prow.has{border-color:color-mix(in srgb,var(--c) 55%,transparent);background:color-mix(in srgb,var(--c) 7%,transparent)}
+.prow.has .plab{color:var(--ct);text-shadow:0 0 6px var(--c)}
+.prow .pt{border-left-color:color-mix(in srgb,var(--c) 35%,transparent)}
+.prow.has .pt{border-left-color:var(--c)}
+.prow.has .pchip{border-color:var(--c);background:color-mix(in srgb,var(--c) 14%,transparent)}
+.prow .orig .pn{display:none}
+.prow.flash,.orig.flash{animation:flash 1.6s ease-out}
+@keyframes flash{0%{box-shadow:0 0 0 2px #FFC94D}100%{box-shadow:0 0 0 2px transparent}}
+@media(min-width:760px){.prow{padding-top:30px}}
+/* 原文：コピーと参照リンク */
+.ocopy{float:right;font:inherit;font-size:12px;color:var(--mute);background:none;border:1px solid var(--line);border-radius:6px;min-height:28px;padding:0 8px;margin:-2px 0 4px 8px;cursor:pointer}
+.orig .ref{color:var(--ct);text-decoration:underline;text-decoration-color:color-mix(in srgb,var(--c) 60%,transparent);text-underline-offset:3px}
+.tr{white-space:normal}
+.tr .trline{display:block;white-space:pre-wrap}
+.tr .trl{margin:2px 0 4px;padding-left:1.3em}
+.tr .trl li{margin:2px 0}
+.tr .trl li::marker{color:var(--c)}
+.tr .trbtn{display:inline-flex;gap:4px;margin-top:2px}

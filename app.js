@@ -234,6 +234,17 @@ function drawBox(focus) {
 }
 
 // ---- 私語訳を直接書く ----
+// 私語訳の文：改行はそのまま、「・」「-」で始まる行は箇条書き
+function trText(body) {
+  const out = []; let ul = [];
+  const flush = () => { if (ul.length) { out.push(`<ul class="trl">${ul.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`); ul = []; } };
+  for (const ln of String(body).split('\n')) {
+    const m = ln.match(/^\s*(?:[・•●]|[-－*]\s)\s*(.*)$/);
+    if (m) ul.push(m[1]); else { flush(); out.push(`<span class="trline">${esc(ln) || '&nbsp;'}</span>`); }
+  }
+  flush();
+  return out.join('');
+}
 const z2h = (x) => x.replace(/[０-９Ａ-Ｚ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0)).replace(/[－‐]/g, '-');
 function refsOf(c) {   // 行がつながっている原文の項番号
   const ids = new Set(c ? c.para_ids || [] : []);
@@ -242,8 +253,8 @@ function refsOf(c) {   // 行がつながっている原文の項番号
 function trForm(secId, c, paraId) {
   const refs = paraId ? '' : `<label class="small-l" for="trRefs">元にした原文の項（なくてもいい）</label><input type="text" id="trRefs" name="refs" placeholder="例：47, A136" value="${esc(refsOf(c))}" autocomplete="off">`;
   return `<form class="trform" data-form="trans" data-sec="${secId}"${paraId ? ` data-para="${paraId}"` : ''}${c ? ` data-edit="${c.id}"` : ''}>`
-    + `<label class="sr" for="trBody">私語訳</label><textarea id="trBody" name="body" rows="3" placeholder="自分の言葉で">${esc(c ? c.body : '')}</textarea>` + refs
-    + `<div class="row">${c ? `<button type="button" class="btn ghost small danger" data-act="trDel" data-id="${c.id}">消す</button>` : ''}<span class="grow"></span><button type="button" class="btn ghost small" data-act="trCancel">やめる</button><button class="btn small">${c ? '直す' : '書く'}</button></div></form>`;
+    + `<label class="sr" for="trBody">私語訳</label><textarea id="trBody" name="body" rows="8" placeholder="自分の言葉で（改行できる）">${esc(c ? c.body : '')}</textarea>` + refs
+    + `<div class="row">${c ? `<button type="button" class="btn ghost small danger" data-act="trDel" data-id="${c.id}">消す</button>` : ''}<button type="button" class="btn ghost small" data-act="bullet" aria-label="箇条書きにする">・ 箇条書き</button><span class="grow"></span><button type="button" class="btn ghost small" data-act="trCancel">やめる</button><button class="btn small">${c ? '直す' : '書く'}</button></div></form>`;
 }
 
 // ---- 原文マーカー（箱ごとに kv 'marks:<箱>' へ。{段落id: [{s,e,t}]}） ----
@@ -257,16 +268,49 @@ function markRanges(p) {
   }
   return out.sort((a, b) => a[0] - b[0]);
 }
+// 原文の中の「監基報315」「第48項」「A136項」を、その箱・その段落へのリンクにする
+const REF = /(監査基準報告書|監基報)\s*([0-9０-９]{3})(?:第([0-9０-９]+)項)?|第?(F?A?[0-9０-９]+(?:-[0-9]+JP)?)項/g;
+function stdBox(num) { return boxes().find((b) => b.shelf === 'kanki' && b.key.endsWith('/' + num)); }
+function linkify(raw, p) {
+  const list = boxCtx && boxCtx.b.id === p.box_id ? boxCtx.paras : prepParas;
+  let out = '', at = 0, m;
+  REF.lastIndex = 0;
+  while ((m = REF.exec(raw))) {
+    let a = null;
+    if (m[2]) {
+      const b = stdBox(z2h(m[2]));
+      if (b && b.id !== p.box_id) a = `<a class="ref" href="#/n/${b.id}">`;
+    } else {
+      const lab = z2h(m[4]);
+      if (list.some((x) => x.box_id === p.box_id && x.label === lab)) a = `<a class="ref" href="#" data-act="goPara" data-label="${esc(lab)}">`;
+    }
+    if (!a) continue;
+    out += esc(raw.slice(at, m.index)) + a + esc(m[0]) + '</a>';
+    at = m.index + m[0].length;
+  }
+  return out + esc(raw.slice(at));
+}
 function origHtml(p) {
   let html = '', at = 0;
   markRanges(p).forEach(([s, e], i) => {
     if (s < at) s = at;
     if (e <= s) return;
-    html += esc(p.body.slice(at, s)) + `<mark data-pid="${p.id}" data-mi="${i}">${esc(p.body.slice(s, e))}</mark>`;
+    html += linkify(p.body.slice(at, s), p) + `<mark data-pid="${p.id}" data-mi="${i}">${linkify(p.body.slice(s, e), p)}</mark>`;
     at = e;
   });
-  html += esc(p.body.slice(at));
-  return `<p class="orig" data-pid="${p.id}"><span class="pn">${esc(p.label || '')}</span><span class="ob">${html}</span></p>`;
+  html += linkify(p.body.slice(at), p);
+  return `<p class="orig" data-pid="${p.id}"><span class="pn">${esc(p.label || '')}</span><span class="ob">${html}</span><button class="ocopy" data-act="copyOrig" data-pid="${p.id}" aria-label="この段落の原文をコピー">コピー</button></p>`;
+}
+function goPara(label) {   // 同じ箱の段落へ飛ぶ（畳んでいたら開く）
+  const list = boxCtx ? boxCtx.paras : prepParas;
+  const p = list.find((x) => x.label === label); if (!p) return;
+  if (boxCtx && !boxCtx.pair) { boxCtx.pair = true; drawBox(); }
+  const row = document.getElementById('p-' + p.id) || document.querySelector(`.orig[data-pid="${p.id}"]`);
+  if (!row) return;
+  const bd = row.querySelector('.pbody'); if (bd && bd.hidden) { bd.hidden = false; const c = row.querySelector('.pchip'); c?.classList.add('on'); c?.setAttribute('aria-expanded', 'true'); }
+  const d = row.closest('details'); if (d) d.open = true;
+  row.scrollIntoView({ block: 'center' });
+  row.classList.remove('flash'); void row.offsetWidth; row.classList.add('flash');
 }
 async function saveMarks(pid, list) {
   if (list.length) marks.by[pid] = list; else delete marks.by[pid];
@@ -324,16 +368,22 @@ function kankiBody() {
   if (!secs.length && !paras.length) return '<p class="hint">原文と私語訳はまだ入っていない。原文のPDFと一緒に、Claude Code で作って取り込む。</p>';
   const hasTr = (s) => cards.some((c) => c.kind === 'trans' && c.section_id === s.id);
   const state = (s) => (s.ok_at ? 'ok' : s.want ? 'want' : hasTr(s) ? 'draft' : 'none');
-  const map = `<div class="map">${PHASES.map(([p, label]) => `<div class="phase"><span class="pl">${label}</span>${secs.filter((s) => s.phase === p).map((s) => `<a class="cell c-${state(s)}" href="#/n/${boxCtx.b.id}/${s.id}">${esc(short(s.title, 16))}</a>`).join('') || '<span class="cell c-none blank"></span>'}</div>`).join('')}</div>`
+  const done = new Set(cards.filter((c) => c.kind === 'trans').flatMap((c) => c.para_ids || []));   // 私語訳がついた段落
+  const prog = (ps) => { const n = ps.filter((p) => done.has(p.id)).length; return { n, N: ps.length, pc: ps.length ? Math.round((n / ps.length) * 100) : 0 }; };
+  const all = prog(paras);
+  const bar = (pc) => `<span class="pbar" aria-hidden="true"><i style="width:${pc}%"></i></span>`;
+  const progress = paras.length ? `<p class="progress">私語訳 <b class="num glow">${all.n}</b><span class="num"> / ${all.N}</span> 段落 ${bar(all.pc)}<span class="num pc">${all.pc}%</span></p>` : '';
+  const map = `<div class="map">${PHASES.map(([p, label]) => `<div class="phase"><span class="pl">${label}</span>${secs.filter((s) => s.phase === p).map((s) => `<a class="cell c-${state(s)}" href="#/n/${boxCtx.b.id}/${s.id}">${esc(short(s.title, 16))}${bar(prog(paras.filter((p) => p.section_id === s.id)).pc)}</a>`).join('') || '<span class="cell c-none blank"></span>'}</div>`).join('')}</div>`
     + `<p class="legend"><i class="c-none"></i>まだ<i class="c-want"></i>次に埋めたい<i class="c-draft"></i>下書き<i class="c-ok"></i>納得</p>`;
   const orig = origHtml;
   const sec = (s) => {
     const lines = cards.filter((c) => c.kind === 'trans' && c.section_id === s.id).sort((a, c) => a.seq - c.seq);
     const own = paras.filter((p) => p.section_id === s.id);
     const st = state(s);
-    const head = `<div class="sec-h"><h2>${esc(s.title)}</h2><span class="ph">${(PHASES.find(([p]) => p === s.phase) || [])[1] || ''}</span></div>`
+    const sp = prog(own);
+    const head = `<div class="sec-h"><h2>${esc(s.title)}</h2><span class="ph">${(PHASES.find(([p]) => p === s.phase) || [])[1] || ''}</span>${own.length ? `<span class="sprog num${sp.n === sp.N ? ' full' : ''}">${sp.n}/${sp.N}</span>` : ''}</div>`
       + `<div class="row">${s.ok_at ? `<span class="okmark">納得 ${dlabel(s.ok_at)}</span><button class="btn ghost small" data-act="unok" data-id="${s.id}">下書きに戻す</button>`
-        : `<button class="btn ghost small" data-act="want" data-id="${s.id}" aria-pressed="${!!s.want}">${s.want ? '次に埋めたい ✓' : '次に埋めたい'}</button>${lines.length ? `<button class="btn small" data-act="ok" data-id="${s.id}">納得</button>` : ''}`}</div>`;
+        : `${own.length ? `<button class="btn ghost small" data-act="copySec" data-id="${s.id}">原文をコピー</button>` : ''}<button class="btn ghost small" data-act="want" data-id="${s.id}" aria-pressed="${!!s.want}">${s.want ? '次に埋めたい ✓' : '次に埋めたい'}</button>${lines.length ? `<button class="btn small" data-act="ok" data-id="${s.id}">納得</button>` : ''}`}</div>`;
     const w = boxCtx.writing;
     const ownIds = new Set(own.map((p) => p.id));
     const home = (c) => (c.para_ids || []).find((x) => ownIds.has(x)) || null;   // 行が並ぶ段落（いちばん最初につながっている段落）
@@ -345,9 +395,9 @@ function kankiBody() {
     if (pair) {   // 原文に沿って、段落ごとに私語訳を対で
       const byPara = new Map(), loose = [];
       for (const c of lines) { const h = home(c); if (h) { if (!byPara.has(h)) byPara.set(h, []); byPara.get(h).push(c); } else loose.push(c); }
-      const line = (c) => (w && w.card === c.id ? trForm(s.id, c, home(c)) : `<p class="tr">${esc(c.body)} ${fix(c)}</p>`);
+      const line = (c) => (w && w.card === c.id ? trForm(s.id, c, home(c)) : `<div class="tr">${trText(c.body)}<span class="trbtn">${fix(c)}</span></div>`);
       inner = dg + (loose.length ? `<div class="loose">${loose.map(line).join('')}</div>` : '')
-        + (own.length ? `<div class="pairs">${own.map((p) => `<div class="prow" id="p-${p.id}"><div class="po">${boxCtx.fold ? `<button class="gen pchip" data-act="pOpen" aria-expanded="false">原 ${esc(p.label || '')}</button><div class="pbody" hidden>${orig(p)}</div>` : orig(p)}</div><div class="pt">${(byPara.get(p.id) || []).map(line).join('')}`
+        + (own.length ? `<div class="pairs">${own.map((p) => `<div class="prow${done.has(p.id) ? ' has' : ''}" id="p-${p.id}"><span class="plab num">${esc(p.label || '')}</span><div class="po">${boxCtx.fold ? `<button class="gen pchip" data-act="pOpen" aria-expanded="false">原 ${esc(p.label || '')}</button><div class="pbody" hidden>${orig(p)}</div>` : orig(p)}</div><div class="pt">${(byPara.get(p.id) || []).map(line).join('')}`
           + (w && w.para === p.id && !w.card ? trForm(s.id, null, p.id) : `<button class="addtr" data-act="trAdd" data-id="${s.id}" data-para="${p.id}">＋ 私語訳</button>`) + '</div></div>').join('')}</div>` : writeBtn)
         + (lines.length ? '' : mat);
     } else if (!lines.length) {
@@ -356,12 +406,12 @@ function kankiBody() {
       inner = dg + '<div class="lines">' + lines.map((c) => {
         const ps = (c.para_ids || []).map((x) => pById.get(x)).filter(Boolean);
         if (w && w.card === c.id) return trForm(s.id, c, null);
-        return `<div class="line"><p class="tr">${esc(c.body)}${ps.length ? ` <button class="gen" data-act="gen" aria-expanded="false" aria-label="原文を開く">原</button>` : ''} ${fix(c)}</p><div class="side" hidden>${ps.map(orig).join('')}</div></div>`;
+        return `<div class="line"><div class="tr">${trText(c.body)}<span class="trbtn">${ps.length ? `<button class="gen" data-act="gen" aria-expanded="false" aria-label="原文を開く">原</button> ` : ''}${fix(c)}</span></div><div class="side" hidden>${ps.map(orig).join('')}</div></div>`;
       }).join('') + '</div>' + writeBtn;
     }
     return `<section class="sec s-${st}" id="sec-${s.id}">${head}${inner}</section>`;
   };
-  return map + `<div class="row"><button class="btn ghost small" data-act="pair" aria-pressed="${!pair}">${pair ? '私語訳だけ見る' : '原文と対で見る'}</button>${pair ? `<button class="btn ghost small" data-act="fold" aria-pressed="${boxCtx.fold}">${boxCtx.fold ? '原文を開く' : '原文を畳む'}</button>` : ''}</div>` + secs.map(sec).join('');
+  return map + progress + `<div class="row"><button class="btn ghost small" data-act="pair" aria-pressed="${!pair}">${pair ? '私語訳だけ見る' : '原文と対で見る'}</button>${pair ? `<button class="btn ghost small" data-act="fold" aria-pressed="${boxCtx.fold}">${boxCtx.fold ? '原文を開く' : '原文を畳む'}</button>` : ''}</div>` + secs.map(sec).join('');
 }
 
 // 勘定科目：アサーション軸ごとに、色ラベル付きの行
@@ -658,6 +708,16 @@ document.addEventListener('click', async (e) => {
     switch (d.act) {
       case 'mclose': closeModal(); return;
       case 'picked': { const cb = pickCb; closeModal(); if (cb) await cb(byId.get(d.id)); return; }
+      case 'bullet': {   // 今の行の頭に「・」をつける（ついていたら外す）
+        const t = $('trBody'); const v = t.value, at = t.selectionStart;
+        const st = v.lastIndexOf('\n', at - 1) + 1;
+        if (v.startsWith('・', st)) { const k = v.startsWith('・ ', st) ? 2 : 1; t.value = v.slice(0, st) + v.slice(st + k); t.setSelectionRange(Math.max(st, at - k), Math.max(st, at - k)); }
+        else { t.value = v.slice(0, st) + '・ ' + v.slice(st); t.setSelectionRange(at + 2, at + 2); }
+        t.focus(); return;
+      }
+      case 'goPara': e.preventDefault(); goPara(d.label); return;
+      case 'copyOrig': { const p = (boxCtx ? boxCtx.paras : prepParas).find((x) => x.id === d.pid) || prepParas.find((x) => x.id === d.pid); if (p) copy(`${p.label ? p.label + '　' : ''}${p.body}`, '原文をコピーした'); return; }
+      case 'copySec': { const own = boxCtx.paras.filter((p) => p.section_id === d.id); const s = boxCtx.secs.find((x) => x.id === d.id); copy(`${boxCtx.b.title}　${s.title}\n\n` + own.map((p) => `${p.label ? p.label + '　' : ''}${p.body}`).join('\n\n'), '節の原文をコピーした'); return; }
       case 'fold': boxCtx.fold = !boxCtx.fold; try { localStorage.setItem('yuri-fold', boxCtx.fold ? '1' : ''); } catch {} redraw(); return;
       case 'pOpen': { const bd = act.nextElementSibling; bd.hidden = !bd.hidden; act.setAttribute('aria-expanded', String(!bd.hidden)); act.classList.toggle('on', !bd.hidden); return; }
       case 'gen': { const side = act.closest('.line').querySelector('.side'); side.hidden = !side.hidden; act.setAttribute('aria-expanded', String(!side.hidden)); act.classList.toggle('on', !side.hidden); return; }
@@ -726,6 +786,17 @@ document.addEventListener('click', async (e) => {
       case 'logout': await store.signOut(); location.reload(); return;
     }
   } catch (err) { fail(err); }
+});
+// 箇条書きの行で改行したら、次の行も「・」で始める（空の「・」で改行したら箇条書きを終える）
+document.addEventListener('keydown', (e) => {
+  const t = e.target;
+  if (t.id !== 'trBody' || e.key !== 'Enter' || e.isComposing || e.shiftKey) return;
+  const v = t.value, at = t.selectionStart, st = v.lastIndexOf('\n', at - 1) + 1;
+  const line = v.slice(st, at);
+  if (!/^・/.test(line)) return;
+  e.preventDefault();
+  if (/^・\s*$/.test(line)) { t.value = v.slice(0, st) + v.slice(at); t.setSelectionRange(st, st); return; }
+  t.value = v.slice(0, at) + '\n・ ' + v.slice(t.selectionEnd); t.setSelectionRange(at + 3, at + 3);
 });
 document.addEventListener('change', async (e) => {
   if (e.target.id === 'impFile' && e.target.files[0]) previewImport(await e.target.files[0].text());
