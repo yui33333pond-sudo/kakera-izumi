@@ -2,13 +2,13 @@
 // ここに書いた場所は、ログインしたときに足りない分だけデータベースに足す（消したり並べ替えたりはしない）。
 // 書き方：[名前, [子…]] は階層、'名前' だけなら箱。監基報は '番号 正式な名前'。
 
-export const SHELVES = [
-  { id: 'kanki', name: '監基報', color: '#3b4fd8', shape: 'square' },
-  { id: 'kamoku', name: '勘定科目', color: '#0f7a8a', shape: 'stack' },
-  { id: 'eigo', name: '英語', color: '#7a3fc4', shape: 'circle' },
-  { id: 'hon', name: '本', color: '#9a5b1e', shape: 'book' },
-  { id: 'genba', name: '現場', color: '#c43a5b', shape: 'triangle' },
-  { id: 'nichijo', name: '日常', color: '#55606a', shape: 'leaf' },
+export const SHELVES = [   // color＝ネオン（線・枠）、text＝その色の上で読む文字
+  { id: 'kanki', name: '監基報', color: '#B48CFF', text: '#D7C6FF', shape: 'square' },
+  { id: 'kamoku', name: '勘定科目', color: '#3CF2B8', text: '#B8FFE8', shape: 'stack' },
+  { id: 'eigo', name: '英語', color: '#29E3FF', text: '#BFF6FF', shape: 'circle' },
+  { id: 'hon', name: '本', color: '#FF7A59', text: '#FFD3C6', shape: 'book' },
+  { id: 'genba', name: '現場', color: '#C9CFDB', text: '#E6EAF2', shape: 'triangle' },
+  { id: 'nichijo', name: '日常', color: '#FF4FA8', text: '#FFC6E3', shape: 'leaf' },
 ];
 export const shelfOf = (id) => SHELVES.find((s) => s.id === id);
 
@@ -63,8 +63,12 @@ export function libraryRows() {
 
 // 勘定科目の箱：アサーション軸とラベル
 export const AXES = [
-  ['jitsuzai', '実在性'], ['moura', '網羅性'], ['kikan', '期間帰属'], ['hyoka', '評価'], ['hyoji', '表示'], ['tosei', '統制'],
+  ['jitsuzai', '実在性'], ['moura', '網羅性'], ['kikan', '期間帰属'], ['hyoka', '評価'], ['hyoji', '開示'], ['tosei', '内部統制'],
 ];
-export const LABELS = { abunai: ['危ない', '#c8321e'], tashikameru: ['確かめる', '#2a59c9'], hani: ['範囲', '#7a3fc4'], genba: ['現場', '#9a5b1e'] };
+// 軸ごとのネオン（実在性〜評価は「アサーション」の枠の中、開示・内部統制はその下に並べる）
+export const AX_COLOR = { jitsuzai: '#3CF2B8', moura: '#29E3FF', kikan: '#B48CFF', hyoka: '#6C8CFF', hyoji: '#C9CFDB', tosei: '#FF4FA8' };
+export const IN_ASSERTION = ['jitsuzai', 'moura', 'kikan', 'hyoka'];
+// ラベル。色が null のものは、行の色になる
+export const LABELS = { abunai: ['リスク', '#FF7A59'], tashikameru: ['手続', null], hani: ['範囲', '#B48CFF'], genba: ['現場', '#C9CFDB'] };
 // 監基報の地図
 export const PHASES = [['kamae', '構え'], ['mitsukeru', '見つける'], ['taio', '対応'], ['shimeru', '締める']];

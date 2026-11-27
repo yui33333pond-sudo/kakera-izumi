@@ -1,11 +1,11 @@
 {
-  "name": "vitrine",
-  "short_name": "vitrine",
+  "name": "유리",
+  "short_name": "유리",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#ffffff",
+  "background_color": "#0A0B10",
+  "theme_color": "#0A0B10",
   "lang": "ja",
   "icons": [
     {

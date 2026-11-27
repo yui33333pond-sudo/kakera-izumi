@@ -1,5 +1,5 @@
 import { supabaseStore, memoryStore } from './store.js';
-import { SHELVES, shelfOf, libraryRows, AXES, LABELS, PHASES } from './library.js';
+import { SHELVES, shelfOf, libraryRows, AXES, LABELS, PHASES, AX_COLOR, IN_ASSERTION } from './library.js';
 import { readImport, runImport } from './import.js';
 import { renderDiagram } from './diagram.js';
 import { seedDemo } from './demo.js';
@@ -107,9 +107,10 @@ function miniOf(b, st) {
   }
   return '';
 }
+const shVars = (sh) => `--c:${sh.color};--ct:${sh.text}`;
 function tile(b) {
   const st = boxState(b), sh = shelfOf(b.shelf);
-  return `<a class="tile${st.empty ? ' empty' : ''}" href="#/n/${b.id}" style="--c:${sh.color}"><span class="tt">${esc(b.title)}</span>${st.empty ? '' : miniOf(b, st)}${st.ok ? `<span class="okn">納得 ${st.ok}</span>` : ''}</a>`;
+  return `<a class="tile${st.empty ? ' empty' : ' neon'}" href="#/n/${b.id}" style="${shVars(sh)}"><span class="tt">${esc(b.title)}</span>${st.empty ? '' : miniOf(b, st)}${st.ok ? `<span class="okn">納得 ${st.ok}</span>` : ''}</a>`;
 }
 
 // ---- 画面の切り替え（#/ … が今いる場所） ----
@@ -136,7 +137,7 @@ async function render() {
 }
 const live = (my) => my === renderSeq;
 function crumbs(list) {
-  $('crumbs').innerHTML = `<a href="#/" class="home">vitrine</a>` + list.map((x) => `<span class="sep" aria-hidden="true">›</span>${x.href ? `<a href="${x.href}">${esc(x.t)}</a>` : `<b>${esc(x.t)}</b>`}`).join('');
+  $('crumbs').innerHTML = `<a href="#/" class="home glow" lang="ko">유리</a>` + list.map((x) => `<span class="sep" aria-hidden="true">›</span>${x.href ? `<a href="${x.href}">${esc(x.t)}</a>` : `<b>${esc(x.t)}</b>`}`).join('');
   const last = $('crumbs').lastElementChild; if (last) last.scrollIntoView({ inline: 'end', block: 'nearest' });
 }
 function shelfCrumb(n) {
@@ -159,20 +160,25 @@ async function viewHome(my) {
   const recent = boxes().filter((b) => b.opened_at).sort((a, c) => c.opened_at.localeCompare(a.opened_at)).slice(0, 3);
   const tiles = SHELVES.map((sh) => {
     const ids = new Set(boxes().filter((b) => b.shelf === sh.id).map((b) => b.id));
-    const okN = secMeta.filter((s) => ids.has(s.box_id) && s.ok_at).length + cardMeta.filter((c) => ids.has(c.box_id) && c.kind === 'row' && c.ok_at).length;
     const plus = cardMeta.filter((c) => ids.has(c.box_id) && c.created_at >= month).length + secMeta.filter((s) => ids.has(s.box_id) && s.ok_at && s.ok_at >= month).length;
-    return `<a class="shelf-tile" href="#/s/${sh.id}" style="--c:${sh.color}">${shapeSvg(sh.shape, sh.color, 34)}<span class="sn">${sh.name}</span><span class="sk">${okN ? `納得 ${okN}` : ''}${plus ? `<b>今月 +${plus}</b>` : ''}</span></a>`;
+    return `<a class="shelf-tile neon" href="#/s/${sh.id}" style="${shVars(sh)}"><span class="sn">${sh.name}</span><span class="sk${plus ? ' glow' : ' z'}">+${plus}</span></a>`;
   }).join('');
   let today;
-  if (todays) today = `<a class="today sticky-c" href="#/st/${todays.id}"><span class="k">付箋</span><span class="b">${esc(short(todays.body, 60))}</span></a>`;
-  else if (want) { const b = byId.get(want.box_id); today = `<a class="today" href="#/n/${want.box_id}/${want.id}"><span class="k">次に埋めたい</span><span class="b">${esc(b ? b.title : '')}　${esc(want.title)}</span></a>`; }
-  else today = '<p class="hint">付箋を貼るか、マスを「次に埋めたい」にすると、ここに出てくる。</p>';
-  paint(`<section class="hero"><h1 class="logo">vitrine</h1><p class="ms"><b>${ok}</b><span>枚 納得</span>${next ? `<span class="nx">次の節目 ${next}</span>` : ''}</p></section>`
-    + `<section><h2>今日の1つ</h2>${today}</section>`
-    + `<section><h2>棚</h2><div class="shelves">${tiles}</div></section>`
-    + `<section><h2>付箋</h2>${stickyForm()}<div class="stack">${stickies.slice(0, 3).map(stickyCard).join('')}</div>${stickies.length > 3 ? '<a class="more" href="#/stickies">付箋をぜんぶ見る</a>' : ''}</section>`
-    + (recent.length ? `<section><h2>最近の箱</h2><div class="tiles">${recent.map(tile).join('')}</div></section>` : '')
+  if (todays) today = `<a class="today" href="#/st/${todays.id}"><span class="k glow">今日の1つ</span><span class="b">${esc(short(todays.body, 60))}</span><span class="w">付箋から</span></a>`;
+  else if (want) { const b = byId.get(want.box_id); today = `<a class="today" href="#/n/${want.box_id}/${want.id}"><span class="k glow">今日の1つ</span><span class="b">${esc(want.title)}</span><span class="w">${esc(b ? b.title : '')}・次に埋めたい</span></a>`; }
+  else today = '<div class="today"><span class="k glow">今日の1つ</span><span class="w">付箋を貼るか、マスを「次に埋めたい」にすると、ここに出てくる。</span></div>';
+  const reached = MILESTONES.filter((m) => m <= ok).pop();
+  paint(logoHtml()
+    + `<p style="text-align:center;margin:0 0 22px"><span class="sign neon"><b class="glow">${ok}</b><span>${reached ? '枚、すごい！' : '枚 納得'}</span>${next ? `<span class="nx">次は ${next}</span>` : ''}</span></p>`
+    + today
+    + `<section><p class="lbl">入口</p><div class="shelves">${tiles}</div></section>`
+    + `<section><p class="lbl" style="color:#FFC94D">付箋</p><div class="stack">${stickies.slice(0, 3).map(stickyCard).join('')}</div>${stickies.length > 3 ? '<a class="more" href="#/stickies">付箋をぜんぶ見る</a>' : ''}${stickyForm()}</section>`
+    + (recent.length ? `<section><p class="lbl">最近の箱</p><div class="tiles">${recent.map(tile).join('')}</div></section>` : '')
     + (unfiled ? `<section><a class="more" href="#/izumi">前の泉のかけらを、箱に納め直す</a></section>` : ''));
+}
+function logoHtml() {
+  const d = new Date();
+  return `<div class="hero"><h1 class="logo-k glow" lang="ko">유리</h1><div class="logo-r" aria-hidden="true"><span lang="ko">유리</span></div><p class="ym">YURI　${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}</p></div>`;
 }
 const stickyForm = () => `<form class="sform" data-form="sticky"><input type="text" name="body" placeholder="付箋を貼る" aria-label="付箋" enterkeyhint="done"><button class="btn">貼る</button></form>`;
 const stickyCard = (s) => `<a class="sticky-c" href="#/st/${s.id}"><span class="b">${esc(short(s.body, 80))}</span><span class="d">${dlabel(s.created_at)}${s.hint_box && byId.get(s.hint_box) ? ' · 近い箱：' + esc(byId.get(s.hint_box).title) : ''}</span></a>`;
@@ -195,7 +201,7 @@ async function viewNode(n, my, focus) {
   };
   const ch = childrenOf(n.key);
   const direct = ch.filter((c) => c.is_box), sub = ch.filter((c) => !c.is_box);
-  paint(`<div class="shelf-head" style="--c:${sh.color}">${shapeSvg(sh.shape, sh.color, 30)}<h1>${esc(isShelf ? sh.name : n.title)}</h1></div>`
+  paint(`<div class="shelf-head" style="${shVars(sh)}">${shapeSvg(sh.shape, sh.color, 30)}<h1>${esc(isShelf ? sh.name : n.title)}</h1></div>`
     + (direct.length ? `<div class="tiles">${direct.map(tile).join('')}</div>` : '')
     + sub.map((g) => group(g, 0)).join('')
     + (!ch.length ? `<p class="hint">${n.shelf === 'nichijo' ? '日常の棚は月ごとに育つ（あとで作る）。' : n.shelf === 'hon' ? '本は1冊＝1箱（あとで作る）。' : 'まだ箱がない。'}</p>` : ''));
@@ -219,7 +225,8 @@ function drawBox(focus) {
   let body = '';
   if (b.shelf === 'kanki') body = kankiBody();
   else if (b.shelf === 'kamoku') body = kamokuBody();
-  paint(`<div class="boxv" style="--c:${sh.color}"><div class="box-head"><h1>${esc(b.title)}</h1><div class="row"><a class="btn ghost small" href="#/prep/${b.id}">予習</a><button class="btn ghost small" data-act="link">つなぐ</button></div></div>`
+  const path = shelfCrumb(b).slice(0, -1);
+  paint(`<div class="boxv" style="${shVars(sh)}"><div class="box-head"><p class="path">${path.map((x) => x.href ? `<a href="${x.href}">${esc(x.t)}</a>` : esc(x.t)).join(' › ')}</p><h1 class="glow">${esc(b.title)}</h1><div class="row"><a class="btn ghost small" href="#/prep/${b.id}">予習</a><button class="btn ghost small" data-act="link">つなぐ</button></div></div>`
     + body + notesBlock() + `<section><h2>つながり</h2><div id="links" class="links">${linksHtml([])}</div></section></div>`);
   if (focus) document.getElementById('sec-' + focus)?.scrollIntoView({ block: 'start' });
   if (boxCtx.fromSticky) { const t = document.querySelector('#noteForm textarea'); t?.scrollIntoView({ block: 'center' }); t?.focus(); }
@@ -357,17 +364,16 @@ function kankiBody() {
 }
 
 // 勘定科目：アサーション軸ごとに、色ラベル付きの行
-const labHtml = (l) => (LABELS[l] ? `<span class="lab" style="--lc:${LABELS[l][1]}">${LABELS[l][0]}</span>` : '');
+const labHtml = (l, rowColor) => { const L = LABELS[l]; return L ? `<span class="lab" style="--lc:${L[1] || rowColor || '#C9CFDB'}">${L[0]}</span>` : ''; };
 function kamokuBody() {
   const rows = boxCtx.cards.filter((c) => c.kind === 'row' && c.box_id === boxCtx.b.id);
-  const block = ([ax, name]) => {
-    const list = rows.filter((r) => r.axis === ax);
-    return `<section class="axis"><h2>${name}</h2>${list.length ? list.map((r) => `<div class="krow${r.ok_at ? ' ok' : ''}"><div class="labs">${(r.labels || []).map(labHtml).join('')}</div><p>${esc(r.body)}</p>`
-      + `<div class="rbtn">${r.ok_at ? `<button class="btn ghost small" data-act="rowUnok" data-id="${r.id}">納得 ✓</button>` : `<button class="btn ghost small" data-act="rowOk" data-id="${r.id}">納得</button>`}<button class="btn ghost small" data-act="rowDel" data-id="${r.id}" aria-label="この行を消す">✕</button></div></div>`).join('')
-      : '<p class="hint small">まだ行がない。</p>'}</section>`;
-  };
-  return `<p class="legend">${Object.values(LABELS).map(([n, c]) => `<span class="lab" style="--lc:${c}">${n}</span>`).join('')}</p>`
-    + AXES.map(block).join('')
+  const rowHtml = (r, col) => `<div class="krow"><p>${(r.labels || []).map((l) => labHtml(l, col)).join('')}${esc(r.body)}</p>`
+    + `<span class="rbtn"><button class="ok-b${r.ok_at ? ' on' : ''}" data-act="${r.ok_at ? 'rowUnok' : 'rowOk'}" data-id="${r.id}" aria-pressed="${!!r.ok_at}">${r.ok_at ? '納得 ✓' : '納得'}</button><button class="x" data-act="rowDel" data-id="${r.id}" aria-label="この行を消す">✕</button></span></div>`;
+  const list = (ax) => { const l = rows.filter((r) => r.axis === ax); return l.length ? l.map((r) => rowHtml(r, AX_COLOR[ax])).join('') : '<p class="none">まだない</p>'; };
+  const nameOf = (ax) => AXES.find(([k]) => k === ax)[1];
+  const vars = (ax) => `--c:${AX_COLOR[ax]};--ct:color-mix(in srgb,${AX_COLOR[ax]} 45%,#fff)`;
+  return `<div class="fr afr neon"><p class="lbl">アサーション</p>${IN_ASSERTION.map((ax) => `<div class="tube" style="${vars(ax)}"><h3>${nameOf(ax)}</h3>${list(ax)}</div>`).join('')}</div>`
+    + `<div class="duo">${AXES.filter(([k]) => !IN_ASSERTION.includes(k)).map(([ax, n]) => `<div class="fr neon" style="${vars(ax)}"><h3>${n}</h3>${list(ax)}</div>`).join('')}</div>`
     + `<details class="addrow"><summary>行を足す</summary><form data-form="row"><select name="axis" aria-label="軸">${AXES.map(([k, n]) => `<option value="${k}">${n}</option>`).join('')}</select>`
     + `<div class="row">${Object.entries(LABELS).map(([k, [n]]) => `<label class="chk"><input type="checkbox" name="labels" value="${k}"> ${n}</label>`).join('')}</div>`
     + `<textarea name="body" placeholder="1〜2行で" aria-label="行の中身"></textarea><button class="btn">足す</button></form></details>`;
@@ -378,14 +384,15 @@ function notesBlock() {
   const { b, cards, fromSticky } = boxCtx;
   const notes = cards.filter((c) => c.kind === 'note').sort((a, c) => c.created_at.localeCompare(a.created_at));
   const st = fromSticky && stickies.find((s) => s.id === fromSticky);
-  return `<section><h2>追記</h2>`
+  return `<section class="notes-fr neon"><p class="lbl">追記</p>`
     + `<form id="noteForm" data-form="note">${st ? `<p class="hint small">付箋から。追記したら、付箋ははがす</p>` : ''}<textarea name="body" placeholder="気づいたこと、悩んだこと" aria-label="追記">${st ? esc(st.body) : ''}</textarea>`
     + `<div class="row"><span class="tagged" id="noteTags"></span><button type="button" class="btn ghost small" data-act="noteTag">ほかの箱にも出す</button><button class="btn">追記する</button></div></form>`
     + `<div class="stack">${notes.map((n) => {
       const from = n.box_id !== b.id && byId.get(n.box_id);
       const also = (n.tags || []).filter((t) => t !== b.id).map((t) => byId.get(t)).filter(Boolean);
-      return `<div class="note${from ? ' from' : ''}"><span class="d">${dlabel(n.created_at)}${from ? ` · <a href="#/n/${from.id}">${esc(from.title)}</a>から` : ''}${!from && also.length ? ' · ' + also.map((x) => `<a href="#/n/${x.id}">${esc(x.title)}</a>`).join('、') + 'にも' : ''}</span>`
-        + `<p>${esc(n.body)}</p><div class="rbtn"><button class="btn ghost small" data-act="noteEdit" data-id="${n.id}">直す</button><button class="btn ghost small" data-act="noteDel" data-id="${n.id}">消す</button></div></div>`;
+      const tags = from ? [`<a class="tag" href="#/n/${from.id}" style="${shVars(shelfOf(from.shelf))}">${esc(from.title)}から</a>`]
+        : also.map((x) => `<a class="tag" href="#/n/${x.id}" style="${shVars(shelfOf(x.shelf))}">${esc(x.title)}にも</a>`);
+      return `<div class="note${from ? ' from' : ''}"><span class="dt">${dlabel(n.created_at)}</span><p>${esc(n.body)}</p>${tags.length ? `<div class="tags">${tags.join('')}</div>` : ''}<div class="rbtn"><button class="btn ghost small" data-act="noteEdit" data-id="${n.id}">直す</button><button class="btn ghost small" data-act="noteDel" data-id="${n.id}">消す</button></div></div>`;
     }).join('')}</div></section>`;
 }
 function linksHtml(near) {
@@ -418,7 +425,7 @@ async function viewPrep(b, my) {
   let html = `<h1 class="ptitle">${esc(b.title)}、その前に</h1>`;
   html += `<section><h2>前に悩んだこと</h2>${notes.length ? `<div class="stack">${notes.map((n) => `<div class="note"><span class="d">${dlabel(n.created_at)}</span><p>${esc(n.body)}</p></div>`).join('')}</div>` : '<p class="hint small">追記はまだない。</p>'}</section>`;
   if (dgs.length) html += `<section><h2>図</h2>${dgs.map((s) => `<h3>${esc(s.title)}</h3>${renderDiagram(s.diagram)}`).join('')}</section>`;
-  if (rows.length) html += `<section><h2>危ないところから</h2>${rows.map((r) => `<div class="krow${r.ok_at ? ' ok' : ''}"><div class="labs">${(r.labels || []).map(labHtml).join('')}</div><p>${esc(r.body)}</p></div>`).join('')}</section>`;
+  if (rows.length) html += `<section><h2>リスクから</h2>${rows.map((r) => `<div class="tube" style="--c:${AX_COLOR[r.axis]};--ct:color-mix(in srgb,${AX_COLOR[r.axis]} 45%,#fff);margin-bottom:8px"><div class="krow"><p>${(r.labels || []).map((l) => labHtml(l, AX_COLOR[r.axis])).join('')}${esc(r.body)}</p></div></div>`).join('')}</section>`;
   if (paras.length) html += `<section><h2>原文</h2><details class="orig-all"><summary>${paras.length} 段落</summary>${paras.map(origHtml).join('')}</details></section>`;
   paint(html);
 }
