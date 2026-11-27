@@ -188,6 +188,7 @@ async function viewNode(n, my, focus) {
   if (!n) { location.hash = '#/'; return; }
   if (n.is_box) return viewBox(n, my, focus);
   if (n.key === 'hon') return viewBooks(my);
+  if (n.key === 'nichijo') return viewDiaryShelf(my);
   await loadMeta();
   if (!live(my)) return;
   const sh = shelfOf(n.shelf);
@@ -205,7 +206,7 @@ async function viewNode(n, my, focus) {
   paint(`<div class="shelf-head" style="${shVars(sh)}">${shapeSvg(sh.shape, sh.color, 30)}<h1>${esc(isShelf ? sh.name : n.title)}</h1></div>`
     + (direct.length ? `<div class="tiles">${direct.map(tile).join('')}</div>` : '')
     + sub.map((g) => group(g, 0)).join('')
-    + (!ch.length ? `<p class="hint">${n.shelf === 'nichijo' ? '日常の棚は月ごとに育つ（あとで作る）。' : 'まだ箱がない。'}</p>` : ''));
+    + (!ch.length ? `<p class="hint">${'まだ箱がない。'}</p>` : ''));
 }
 
 // ---- 箱 ----
@@ -229,9 +230,10 @@ function drawBox(focus) {
   if (b.shelf === 'kanki') body = kankiBody();
   else if (b.shelf === 'kamoku') body = kamokuBody();
   else if (b.shelf === 'hon') body = bookBody();
+  else if (b.shelf === 'nichijo') body = diaryBody();
   const path = shelfCrumb(b).slice(0, -1);
   paint(`<div class="boxv" style="${shVars(sh)}"><div class="box-head"><p class="path">${path.map((x) => x.href ? `<a href="${x.href}">${esc(x.t)}</a>` : esc(x.t)).join(' › ')}</p><h1 class="glow">${esc(b.title)}</h1><div class="row"><a class="btn ghost small" href="#/prep/${b.id}">予習</a><button class="btn ghost small" data-act="link">つなぐ</button></div></div>`
-    + body + notesBlock() + `<section><h2>つながり</h2><div id="links" class="links">${linksHtml([])}</div></section></div>`);
+    + body + (b.shelf === 'nichijo' ? '' : notesBlock()) + `<section><h2>つながり</h2><div id="links" class="links">${linksHtml([])}</div></section></div>`);
   if (focus) document.getElementById('sec-' + focus)?.scrollIntoView({ block: 'start' });
   if (boxCtx.fromSticky) { const t = document.querySelector('#noteForm textarea'); t?.scrollIntoView({ block: 'center' }); t?.focus(); }
 }
@@ -488,6 +490,48 @@ function bookBody() {
     + '</section>';
 }
 
+// ---- 日常：月ごとの箱（自動でできる）に、日付つきで自由に書く。書いたものは追記（note）と同じ1枚 ----
+const localDay = (d = new Date()) => new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+const WD = '日月火水木金土';
+const dayLabel = (iso) => { const d = new Date(iso); return `${d.getMonth() + 1}/${d.getDate()}（${WD[d.getDay()]}）`; };
+async function monthBox(ym) {   // 'YYYY-MM' の箱。なければ作る
+  const key = `nichijo/${ym}`;
+  if (!byKey.has(key)) {
+    await store.seedNodes([{ shelf: 'nichijo', key, parent_key: 'nichijo', title: `${ym.slice(0, 4)}年${+ym.slice(5)}月`, sort: `005.${ym}`, is_box: true }]);
+    await loadLibrary();
+  }
+  return byKey.get(key);
+}
+async function viewDiaryShelf(my) {
+  await loadMeta();
+  if (!live(my)) return;
+  const sh = shelfOf('nichijo');
+  crumbs([{ t: sh.name }]);
+  const months = boxes().filter((b) => b.shelf === 'nichijo').sort((a, b) => b.key.localeCompare(a.key));
+  const years = [...new Set(months.map((b) => b.key.slice(8, 12)))];
+  paint(`<div class="shelf-head" style="${shVars(sh)}"><h1>${sh.name}</h1></div><div class="row"><button class="btn" data-act="diaryNew">今日のことを書く</button></div>`
+    + (months.length ? years.map((y) => `<section style="${shVars(sh)}"><p class="lbl num">${y}</p><div class="months">${months.filter((b) => b.key.slice(8, 12) === y).map((b) => {
+      const n = cardMeta.filter((c) => c.box_id === b.id && c.kind === 'note').length;
+      return `<a class="month neon" href="#/n/${b.id}"><b class="num glow">${+b.key.slice(13)}</b><span>月</span><span class="cnt num">${n}</span></a>`;
+    }).join('')}</div></section>`).join('') : '<p class="hint">まだ何も書いていない。「今日のことを書く」から。書いた日の月の箱が、自動でできる。</p>'));
+}
+function diaryForm(c, fromSt) {
+  const date = c ? localDay(new Date(c.created_at)) : fromSt ? localDay(new Date(fromSt.created_at)) : localDay();
+  return `<form class="trform diaryform" data-form="diary"${c ? ` data-edit="${c.id}"` : ''}>`
+    + `<div class="drow"><label for="dDate">日付</label><input type="date" id="dDate" name="date" value="${date}" required></div>`
+    + `<label class="sr" for="trBody">日常</label><textarea id="trBody" name="body" rows="6" placeholder="どこに行った、誰といた、どうだった">${esc(c ? c.body : fromSt ? fromSt.body : '')}</textarea>`
+    + `<div class="row">${c ? `<button type="button" class="btn ghost small danger" data-act="noteDel" data-id="${c.id}">消す</button><button type="button" class="btn ghost small" data-act="trCancel">やめる</button>` : ''}<span class="grow"></span><button class="btn small">${c ? '直す' : '書く'}</button></div></form>`;
+}
+function diaryBody() {
+  const { b, cards, fromSticky } = boxCtx;
+  const st = fromSticky && stickies.find((x) => x.id === fromSticky);
+  const list = cards.filter((c) => c.kind === 'note' && c.box_id === b.id).sort((a, c) => c.created_at.localeCompare(a.created_at));
+  const ed = boxCtx.writing && boxCtx.writing.diary;
+  return `<section style="--c:#FF4FA8;--ct:#FFC6E3">${st ? '<p class="hint small">付箋から。書いたら、付箋ははがす</p>' : ''}${ed ? '' : diaryForm(null, st)}</section>`
+    + `<section class="diary">${list.map((c) => ed === c.id ? diaryForm(c) : `<article class="dent"><p class="dd num glow">${dayLabel(c.created_at)}</p><div class="tr">${trText(c.body)}</div><div class="row"><button class="gen fix" data-act="diaryEdit" data-id="${c.id}">直す</button></div></article>`).join('')
+      || '<p class="hint">この月はまだ何も書いていない。</p>'}</section>`;
+}
+
 // 追記：日付つき。ほかの箱にも出すときは、向こうでは「〇〇から」
 function notesBlock() {
   const { b, cards, fromSticky } = boxCtx;
@@ -602,7 +646,7 @@ async function viewSticky(id, my) {
   if (!s) { location.hash = '#/'; return; }
   crumbs([{ t: '付箋', href: '#/stickies' }, { t: dlabel(s.created_at) }]);
   paint(`<div class="sticky-big"><span class="d">${dlabel(s.created_at)}</span><p>${esc(s.body)}</p></div><h2>どの箱に追記する？</h2><div id="stNear" class="tiles"><p class="hint">近い箱を探してる…</p></div>`
-    + `<div class="row"><button class="btn ghost" data-act="pick" data-id="${s.id}">箱を探して選ぶ</button><button class="btn ghost" data-act="stDel" data-id="${s.id}">付箋をはがす</button></div>`);
+    + `<div class="row"><button class="btn ghost" data-act="pick" data-id="${s.id}">箱を探して選ぶ</button><button class="btn ghost" data-act="stDiary" data-id="${s.id}" style="--c:#FF4FA8">日常に書く</button><button class="btn ghost" data-act="stDel" data-id="${s.id}">付箋をはがす</button></div>`);
   // 近い箱：貼ったときに見つけたもの（すぐ出す）＋意味で近いもの（あとから足す）
   const cand = [];
   const draw = (done) => {
@@ -748,6 +792,18 @@ document.addEventListener('submit', async (e) => {
       await loadLibrary(); closeModal(); toast(edit ? '直した' : '本を足した');
       const h = `#/n/${id}`; if (location.hash === h) render(); else location.hash = h;
       return;
+    } else if (f.dataset.form === 'diary') {
+      const date = String(fd.get('date') || localDay()), edit = f.dataset.edit;
+      const box = await monthBox(date.slice(0, 7));
+      const t = new Date(); const at = new Date(`${date}T${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}:00`).toISOString();
+      if (edit) await store.patchCard(edit, { body, box_id: box.id, created_at: at, embedding: null });
+      else await store.addCard({ box_id: box.id, kind: 'note', body, created_at: at });
+      const from = boxCtx && boxCtx.fromSticky;
+      if (from) await store.removeSticky(from);
+      toast(from ? '書いた。付箋ははがした' : edit ? '直した' : '書いた'); closeModal(); backfill();
+      const h = `#/n/${box.id}`;
+      if (location.hash === h && !from) { boxCtx.writing = null; boxCtx.cards = await store.cards(box.id); await loadMeta(); redraw(); } else location.hash = h;
+      return;
     } else if (f.dataset.form === 'bookText') {
       const main = boxCtx.cards.find((c) => c.kind === 'trans' && c.box_id === boxCtx.b.id && !c.section_id);
       if (main) await store.patchCard(main.id, { body, embedding: null });
@@ -803,6 +859,9 @@ document.addEventListener('click', async (e) => {
         const mk = (prev ? nextNum(prev[1]) : '①') + ' ';
         t.value = v.slice(0, st) + mk + v.slice(st); t.setSelectionRange(at + mk.length, at + mk.length); t.focus(); return;
       }
+      case 'diaryNew': { const b = await monthBox(localDay().slice(0, 7)); location.hash = `#/n/${b.id}`; return; }
+      case 'diaryEdit': boxCtx.writing = { diary: d.id }; redraw(); $('trBody')?.focus({ preventScroll: true }); return;
+      case 'stDiary': { const st = stickies.find((x) => x.id === d.id); const b = await monthBox(localDay(new Date(st ? st.created_at : Date.now())).slice(0, 7)); location.hash = `#/n/${b.id}?from=${d.id}`; return; }
       case 'bookAdd': openBookForm(null); return;
       case 'bookEdit': openBookForm(boxCtx.b); return;
       case 'bookWrite': boxCtx.writing = { book: true }; redraw(); $('trBody')?.focus({ preventScroll: true }); return;

@@ -329,3 +329,19 @@ select{width:auto}
 .bookform .grow{flex:1}
 input[type=date]{width:100%;font:inherit;font-size:16px;border:1.5px solid var(--line);border-radius:10px;padding:9px 10px;background:var(--panel);color:var(--ink);color-scheme:dark;min-height:46px}
 .foot .btn{white-space:nowrap;flex:none}
+
+/* 日常 */
+.months{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:10px}
+.month{display:flex;align-items:baseline;gap:4px;text-decoration:none;border-radius:12px;padding:10px 12px;min-height:64px}
+.month b{font:300 30px/1 var(--num)}
+.month span{font-size:14px;color:var(--ct)}
+.month .cnt{margin-left:auto;font-size:15px;color:var(--mute)}
+.diaryform .drow{display:flex;align-items:center;gap:10px}
+.diaryform .drow label{font-size:14px;color:var(--mute);flex:none}
+.diaryform .drow input{max-width:190px}
+.diaryform textarea{min-height:30vh}
+.diary{--c:#FF4FA8;--ct:#FFC6E3;display:grid;gap:0}
+.dent{padding:14px 2px;border-top:1px solid var(--line)}
+.dent:first-child{border-top:0}
+.dent .dd{margin:0 0 4px;font-size:17px}
+.dent .row{margin:4px 0 0}
