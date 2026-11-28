@@ -91,6 +91,26 @@ export function supabaseStore(sb) {
     async fileKakera(ids) { must(await sb.from('kakera').update({ filed_at: new Date().toISOString() }).in('id', ids)); },
     async unfiledCount() { const { count, error } = await sb.from('kakera').select('id', { count: 'exact', head: true }).is('filed_at', null).eq('seq', 0); if (error) throw error; return count || 0; },
 
+    // ---- 湧いてくる：書いたもの（追記・私語訳）と前の泉から、ランダムに1枚／去年のこのころ ----
+    async spring() {
+      const cq = () => sb.from('cards').select('id', { count: 'exact', head: true }).in('kind', ['note', 'trans']);
+      const kq = () => sb.from('kakera').select('id', { count: 'exact', head: true }).eq('seq', 0);
+      const [c, k] = await Promise.all([cq(), kq()]);
+      const nc = c.count || 0, nk = k.count || 0;
+      if (nc + nk === 0) return null;
+      const i = Math.floor(Math.random() * (nc + nk));
+      if (i < nc) { const r = must(await sb.from('cards').select('id, box_id, kind, body, created_at').in('kind', ['note', 'trans']).order('created_at').range(i, i)); return r[0] ? { src: 'card', ...r[0] } : null; }
+      const r = must(await sb.from('kakera').select('id, body, created_at, source').eq('seq', 0).order('created_at').range(i - nc, i - nc));
+      return r[0] ? { src: 'kakera', ...r[0] } : null;
+    },
+    async between(from, to) {
+      const [c, k] = await Promise.all([
+        sb.from('cards').select('id, box_id, kind, body, created_at').in('kind', ['note', 'trans']).gte('created_at', from).lt('created_at', to).order('created_at').limit(3),
+        sb.from('kakera').select('id, body, created_at, source').eq('seq', 0).gte('created_at', from).lt('created_at', to).order('created_at').limit(3),
+      ]);
+      return [...must(c).map((r) => ({ src: 'card', ...r })), ...must(k).map((r) => ({ src: 'kakera', ...r }))];
+    },
+
     // ---- ちょっとした状態 ----
     async kvGet(key) { return (must(await sb.from('kv').select('value').eq('key', key).maybeSingle()) || {}).value ?? null; },
     async kvSet(key, value) {
@@ -174,6 +194,14 @@ export function memoryStore() {
     async letters(limit, before) { return T.kakera.filter((k) => !k.seq && !k.filed_at && ['gmail', 'yahoo'].includes(k.source) && (!before || k.created_at < before)).sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, limit).map(pub); },
     async fileKakera(ids) { for (const x of ids) { const r = find('kakera', x); if (r) r.filed_at = now(); } },
     async unfiledCount() { return T.kakera.filter((k) => !k.filed_at && !k.seq).length; },
+    async spring() {
+      const all = [...T.cards.filter((c) => ['note', 'trans'].includes(c.kind)).map((r) => ({ src: 'card', ...pub(r) })), ...T.kakera.filter((k) => !k.seq).map((r) => ({ src: 'kakera', ...pub(r) }))];
+      return all.length ? all[Math.floor(Math.random() * all.length)] : null;
+    },
+    async between(from, to) {
+      const inR = (r) => r.created_at >= from && r.created_at < to;
+      return [...T.cards.filter((c) => ['note', 'trans'].includes(c.kind) && inR(c)).slice(0, 3).map((r) => ({ src: 'card', ...pub(r) })), ...T.kakera.filter((k) => !k.seq && inR(k)).slice(0, 3).map((r) => ({ src: 'kakera', ...pub(r) }))];
+    },
     async kvGet(k) { return kv.has(k) ? kv.get(k) : null; },
     async kvSet(k, v) { v === null ? kv.delete(k) : kv.set(k, v); },
     // 試し用のデータを入れる

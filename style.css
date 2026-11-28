@@ -393,3 +393,37 @@ input[type=date]{width:100%;font:inherit;font-size:16px;border:1.5px solid var(-
 .wform{display:grid;gap:8px;border:1.5px solid var(--c);border-radius:12px;padding:10px 14px}
 .wform .wd{font-size:20px}
 .wok.on{color:var(--bg);background:var(--c);border-color:var(--c)}
+
+/* 育ち */
+.gstats{display:flex;gap:22px;flex-wrap:wrap;margin:8px 0 4px}
+.gstats div{display:grid}
+.gstats .lbl{margin:0}
+.gstats b{font:400 30px/1.2 var(--num)}
+.gline{display:block;width:100%;height:auto;--c:var(--cyan)}
+.gline .grid{stroke:var(--line);stroke-width:1}
+.gline .ax{fill:var(--mute);font:12px var(--num)}
+.gline .ln{fill:none;stroke:var(--cyan);stroke-width:2;stroke-linejoin:round;filter:drop-shadow(0 0 4px rgba(41,227,255,.55))}
+.gline .pt{fill:var(--cyan);stroke:var(--bg);stroke-width:2}
+.gline .lab{fill:var(--ink);font:13px var(--num)}
+svg .hit{fill:transparent;cursor:pointer}
+svg .tip.on .pt{r:6}
+.gshelves{display:grid;gap:12px}
+.gshelf{display:grid;grid-template-columns:84px 1fr;gap:10px;align-items:end}
+.gsn{display:flex;justify-content:space-between;align-items:baseline;gap:6px}
+.gsn b{font-size:15px;color:var(--ct)}
+.gsn span{font-size:15px;color:var(--ink)}
+.gbars{display:block;width:100%;height:auto}
+.gbars .bar{fill:var(--c);filter:drop-shadow(0 0 3px color-mix(in srgb,var(--c) 60%,transparent))}
+.gbars .zero{fill:var(--line)}
+.gbars .tip.on .bar{stroke:var(--ink);stroke-width:1.5}
+.tipline{min-height:1.6em}
+.gms{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}
+.gms li{display:grid;border:1px solid var(--line);border-radius:10px;padding:6px 10px;color:var(--mute);font-size:13px}
+.gms li b{font:400 20px/1.3 var(--num)}
+.gms li.on{border-color:var(--cyan);color:var(--ink)}
+/* 湧いてくる */
+.lblrow{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.lblrow .lbl{margin:0}
+.spring{display:grid;gap:4px;text-decoration:none;border:1px solid var(--line);border-left:2px solid var(--cyan);background:var(--soft);border-radius:10px;padding:10px 14px}
+.spring .b{font-size:16px;white-space:pre-line}
+.spring .d{font-size:12px;color:var(--mute)}

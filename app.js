@@ -132,6 +132,7 @@ async function render() {
     else if (view === 'stickies') await viewStickies(my);
     else if (view === 'izumi') await viewIzumi(my);
     else if (view === 'letter') await viewLetter(a, my);
+    else if (view === 'grow') await viewGrow(my);
     else location.hash = '#/';
   } catch (e) { fail(e); }
   if (!b) window.scrollTo(0, 0);
@@ -150,8 +151,9 @@ const paint = (html) => { $('view').innerHTML = html; };
 // ---- ダッシュボード ----
 async function viewHome(my) {
   await loadMeta();
-  const unfiled = await store.unfiledCount().catch(() => 0);
+  const [unfiled, spring] = await Promise.all([store.unfiledCount().catch(() => 0), springHtml()]);
   if (!live(my)) return;
+  recordMilestones();
   crumbs([]);
   const ok = okTotal();
   const next = MILESTONES.find((m) => m > ok);
@@ -170,8 +172,8 @@ async function viewHome(my) {
   else today = '<div class="today"><span class="k glow">今日の1つ</span><span class="w">付箋を貼るか、マスを「次に埋めたい」にすると、ここに出てくる。</span></div>';
   const reached = MILESTONES.filter((m) => m <= ok).pop();
   paint(logoHtml()
-    + `<p style="text-align:center;margin:0 0 22px"><span class="sign neon"><b class="glow">${ok}</b><span>${reached ? '枚、すごい！' : '枚 納得'}</span>${next ? `<span class="nx">次は ${next}</span>` : ''}</span></p>`
-    + today
+    + `<p style="text-align:center;margin:0 0 22px"><a href="#/grow" class="sign neon" aria-label="育ちを見る"><b class="glow">${ok}</b><span>${reached ? '枚、すごい！' : '枚 納得'}</span>${next ? `<span class="nx">次は ${next}</span>` : ''}</a></p>`
+    + today + spring
     + `<section><p class="lbl">入口</p><div class="shelves">${tiles}</div></section>`
     + `<section><p class="lbl" style="color:#FFC94D">付箋</p><div class="stack">${stickies.slice(0, 3).map(stickyCard).join('')}</div>${stickies.length > 3 ? '<a class="more" href="#/stickies">付箋をぜんぶ見る</a>' : ''}${stickyForm()}</section>`
     + (recent.length ? `<section><p class="lbl">最近の箱</p><div class="tiles">${recent.map(tile).join('')}</div></section>` : '')
@@ -755,6 +757,76 @@ function openModal(title, html) {
 }
 function closeModal() { $('modal').hidden = true; $('modal').innerHTML = ''; pickCb = null; }
 
+// ---- 育ち：納得の数の積み上がりと、棚ごとの月の数。区切り（1・10・30…）に届いた日は kv 'milestones' に残す ----
+function okEvents() {
+  const shelfOfBox = (id) => (byId.get(id) || {}).shelf;
+  return [...secMeta.filter((s) => s.ok_at).map((s) => ({ at: s.ok_at, shelf: shelfOfBox(s.box_id) })),
+    ...cardMeta.filter((c) => c.kind === 'row' && c.ok_at).map((c) => ({ at: c.ok_at, shelf: shelfOfBox(c.box_id) }))].sort((a, b) => a.at.localeCompare(b.at));
+}
+async function recordMilestones() {   // 初めて届いた日だけ残す（あとで納得を戻しても消えない）
+  const ev = okEvents(), saved = (await store.kvGet('milestones').catch(() => null)) || {};
+  let changed = false;
+  for (const m of MILESTONES) if (ev.length >= m && !saved[m]) { saved[m] = ev[m - 1].at; changed = true; }
+  if (changed) await store.kvSet('milestones', saved).catch(() => {});
+  return saved;
+}
+const ym = (iso) => iso.slice(0, 7);
+function lastMonths(n) { const out = [], d = new Date(); d.setDate(1); for (let i = n - 1; i >= 0; i--) { const x = new Date(d.getFullYear(), d.getMonth() - i, 1); out.push(`${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}`); } return out; }
+function growLine(ev, ms) {   // 積み上がり（1本の線）。区切りに点と数
+  const W = 340, H = 170, L = 30, R = 12, T = 14, B = 24;
+  const t0 = new Date(ev[0].at).getTime(), t1 = Math.max(Date.now(), t0 + 864e5);
+  const top = Math.max(5, ...MILESTONES.filter((m) => m >= ev.length).slice(0, 1), ev.length);
+  const x = (t) => L + (t - t0) / (t1 - t0) * (W - L - R), y = (v) => T + (1 - v / top) * (H - T - B);
+  let d = `M${x(t0).toFixed(1)},${y(0).toFixed(1)}`;
+  ev.forEach((e, i) => { const t = new Date(e.at).getTime(); d += `H${x(t).toFixed(1)}V${y(i + 1).toFixed(1)}`; });
+  d += `H${x(t1).toFixed(1)}`;
+  const ticks = [0, Math.round(top / 2), top];
+  const fmt = (t) => { const q = new Date(t); return `${q.getFullYear() % 100}/${q.getMonth() + 1}`; };
+  const pts = MILESTONES.filter((m) => m <= ev.length).map((m) => { const t = new Date(ms[m] || ev[m - 1].at).getTime(); return { m, cx: x(Math.min(Math.max(t, t0), t1)), cy: y(m), t }; });
+  return `<svg class="gline" viewBox="0 0 ${W} ${H}" role="img" aria-label="納得の数の積み上がり。いま ${ev.length}">`
+    + ticks.map((v) => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="grid"/><text x="${L - 6}" y="${y(v) + 4}" class="ax" text-anchor="end">${v}</text>`).join('')
+    + `<text x="${L}" y="${H - 6}" class="ax">${fmt(t0)}</text><text x="${W - R}" y="${H - 6}" class="ax" text-anchor="end">今</text>`
+    + `<path d="${d}" class="ln"/>`
+    + `<text x="${W - R}" y="${y(ev.length) - 8}" class="lab" text-anchor="end">${ev.length}</text>`
+    + pts.map((p, i) => `<g class="tip" data-tip="${p.m}枚目　${dlabel(new Date(p.t).toISOString())}"><circle cx="${p.cx}" cy="${p.cy}" r="14" class="hit"/><circle cx="${p.cx}" cy="${p.cy}" r="4.5" class="pt"/></g>`).join('')
+    + '</svg>';
+}
+function shelfBars(sh, ev, months) {   // 棚ごと：12か月の棒（その棚の色1つ）
+  const mine = ev.filter((e) => e.shelf === sh.id), by = new Map(months.map((m) => [m, 0]));
+  for (const e of mine) if (by.has(ym(e.at))) by.set(ym(e.at), by.get(ym(e.at)) + 1);
+  const max = Math.max(1, ...by.values()), W = 240, H = 44, bw = W / months.length;
+  return `<div class="gshelf" style="${shVars(sh)}"><div class="gsn"><b>${sh.name}</b><span class="num">${mine.length}</span></div>`
+    + `<svg class="gbars" viewBox="0 0 ${W} ${H + 2}" role="img" aria-label="${sh.name}の月ごとの納得">${months.map((m, i) => { const v = by.get(m), h = v ? Math.max(4, v / max * H) : 0;
+      return `<g class="tip" data-tip="${sh.name}　${+m.slice(5)}月　${v}"><rect x="${i * bw}" y="0" width="${bw}" height="${H + 2}" class="hit"/>${v ? `<rect x="${i * bw + 2}" y="${H - h}" width="${bw - 4}" height="${h + 2}" rx="3" class="bar"/>` : `<rect x="${i * bw + 2}" y="${H - 1}" width="${bw - 4}" height="2" class="zero"/>`}</g>`; }).join('')}</svg></div>`;
+}
+async function viewGrow(my) {
+  await loadMeta();
+  const ms = await recordMilestones();
+  if (!live(my)) return;
+  crumbs([{ t: '育ち' }]);
+  const ev = okEvents(), months = lastMonths(12), next = MILESTONES.find((m) => m > ev.length);
+  const thisM = ev.filter((e) => ym(e.at) === months[11]).length;
+  paint(`<h1 class="ptitle">育ち</h1>`
+    + `<div class="gstats"><div><span class="lbl">納得</span><b class="num glow">${ev.length}</b></div><div><span class="lbl">今月</span><b class="num">+${thisM}</b></div>${next ? `<div><span class="lbl">次の区切り</span><b class="num">${next}</b></div>` : ''}</div>`
+    + (ev.length ? `<section><p class="lbl">積み上がり</p>${growLine(ev, ms)}<p class="tipline hint small" aria-live="polite">点を押すと、その区切りに届いた日が出る。</p></section>` : '<p class="hint">まだ納得がない。マスや行を「納得」にすると、ここが育っていく。</p>')
+    + `<section><p class="lbl">棚ごと（この12か月）</p><p class="hint small num">${+months[0].slice(5)}月 → ${+months[11].slice(5)}月</p><div class="gshelves">${SHELVES.map((sh) => shelfBars(sh, ev, months)).join('')}</div><p class="tipline hint small" aria-live="polite">棒を押すと、その月の数が出る。</p></section>`
+    + `<section><p class="lbl">区切り</p><ul class="gms">${MILESTONES.map((m) => ms[m] ? `<li class="on"><b class="num glow">${m}</b><span>${dlabel(ms[m])}</span></li>` : `<li><b class="num">${m}</b><span>まだ</span></li>`).join('')}</ul></section>`);
+}
+
+// ---- 湧いてくる：ホームに、書いたものからランダムに1枚と、1年前のこのころ ----
+function springCard(r) {
+  const b = r.box_id && byId.get(r.box_id);
+  const href = r.src === 'card' && b ? `#/n/${b.id}` : r.src === 'kakera' ? '#/izumi' : null;
+  const where = r.src === 'card' ? (b ? b.title : '') : '前の泉';
+  return `<${href ? `a href="${href}"` : 'div'} class="spring"><span class="b">${esc(short(r.body, 140))}</span><span class="d num">${dlabel(r.created_at)}${where ? ' · ' + esc(where) : ''}</span></${href ? 'a' : 'div'}>`;
+}
+async function springHtml() {
+  const now = Date.now(), iso = (t) => new Date(t).toISOString();
+  const [one, ago] = await Promise.all([store.spring().catch(() => null), store.between(iso(now - 372 * 864e5), iso(now - 358 * 864e5)).catch(() => [])]);
+  return (one ? `<section><div class="lblrow"><p class="lbl" style="color:var(--cyan)">湧いてきた1枚</p><button class="gen" data-act="spring">もう1枚</button></div><div id="springOne">${springCard(one)}</div></section>` : '')
+    + (ago.length ? `<section><p class="lbl">1年前のこのころ</p><div class="stack">${ago.map(springCard).join('')}</div></section>` : '');
+}
+
 // ---- 英語：英字新聞（メルマガが1通＝1枚で並ぶ）と単語帳（記事の単語を押して足す） ----
 // 英字のメルマガかどうか：かなと漢字より英字がずっと多い
 const isEnglish = (t) => { const s = String(t); const en = (s.match(/[A-Za-z]/g) || []).length, ja = (s.match(/[぀-ヿ一-鿿]/g) || []).length; return en > 40 && en > ja * 4; };
@@ -1000,6 +1072,8 @@ document.addEventListener('click', async (e) => {
   const mk = e.target.closest('mark[data-pid]');
   if (mk && getSelection().isCollapsed) { pendingMark = { add: false, pid: mk.dataset.pid, mi: +mk.dataset.mi }; markBar('このマーカーを消す', true); return; }
   if (pendingMark && !pendingMark.add && !e.target.closest('#markBtn')) { pendingMark = null; markBar('', false); }
+  const tp = e.target.closest('svg .tip');
+  if (tp) { const line = tp.closest('section').querySelector('.tipline'); if (line) line.textContent = tp.dataset.tip; document.querySelectorAll('svg .tip.on').forEach((x) => x.classList.remove('on')); tp.classList.add('on'); return; }
   const wd = e.target.closest('.article .w');
   if (wd && getSelection().isCollapsed) { const h = $('view').querySelector('.article-t'); openWord(wd.textContent, sentenceOf(wd), h ? h.textContent : ''); return; }
   const act = e.target.closest('[data-act]'); if (!act) return;
@@ -1115,6 +1189,7 @@ document.addEventListener('click', async (e) => {
       case 'wordOk': { const c = boxCtx.cards.find((x) => x.id === d.id); await store.patchCard(c.id, { ok_at: c.ok_at ? null : new Date().toISOString() }); boxCtx.cards = await store.cards(boxCtx.b.id); await loadMeta(); redraw(); return; }
       case 'wordEditOpen': boxCtx.writing = { word: d.id }; redraw(); return;
       case 'wordDel': if (!confirm('この単語を消す？')) return; await store.removeCard(d.id); boxCtx.writing = null; boxCtx.cards = await store.cards(boxCtx.b.id); await loadMeta(); redraw(); toast('消した'); return;
+      case 'spring': { const r = await store.spring(); if (r && $('springOne')) $('springOne').innerHTML = springCard(r); return; }
       case 'izumiMore': viewIzumi(renderSeq, true); return;
       case 'import': openImport(); return;
       case 'impGo': {

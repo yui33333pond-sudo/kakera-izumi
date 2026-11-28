@@ -60,5 +60,8 @@ export async function seedDemo(store, byKey) {
     { body: 'The new standard takes effect for fiscal years beginning after January 2027. Critics argue that the timeline is too aggressive, while investors have welcomed the move.', created_at: ago(1), seq: 1, group_id: g, source: 'gmail' },
     { body: '【週刊ニュース】今週のまとめ\n\n日本語のメルマガはこれまでどおり前の泉に残る。', created_at: ago(3), seq: 0, group_id: 'demo-letter-2', source: 'gmail' },
   ]);
+  // 育ち：前の月にも納得を少し・1年前のかけら
+  for (const [i, r] of store.T.cards.filter((c) => c.kind === 'row' && !c.ok_at).slice(0, 2).entries()) r.ok_at = ago(40 + i * 35);
+  store.put('kakera', [{ body: '一年前：初めての棚卸立会。寒かった', created_at: ago(364), seq: 0, group_id: null, source: 'hand' }]);
   for (const k of ['kanki/200番台 総括/240', 'kamoku/貸借対照表/資産/流動資産/現金預金']) await store.touchNode(box(k).id);
 }
