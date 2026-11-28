@@ -1010,6 +1010,10 @@ function previewImport(text) {
 
 // ---- 意味の計算待ちを、裏で少しずつ ----
 let filling = false;
+// 書いている最中・書いた直後は待つ（iPhone では計算が重く、手元がもたつくので）。少しずつ、手が止まっているときだけ進める
+let lastTouch = 0;
+const busy = () => Date.now() - lastTouch < 4000 || /^(TEXTAREA|INPUT)$/.test((document.activeElement || {}).tagName || '');
+const waitIdle = async () => { while (busy() || document.hidden) await new Promise((r) => setTimeout(r, 1500)); };
 async function backfill() {
   if (filling) return;
   filling = true;
@@ -1017,11 +1021,12 @@ async function backfill() {
   try {
     const seen = new Set();
     for (;;) {
-      const rows = (await store.pending(24)).filter((r) => !seen.has(r.t + r.id));
+      await waitIdle();
+      const rows = (await store.pending(6)).filter((r) => !seen.has(r.t + r.id));
       if (!rows.length) break;
       rows.forEach((r) => seen.add(r.t + r.id));
       if (modelReady) status(`意味を計算中…（${done} 件済み）`);
-      const vecs = await embed(rows.map((r) => r.body.slice(0, 2000)));
+      const vecs = await embed(rows.map((r) => r.body.slice(0, 1200)));
       for (let i = 0; i < rows.length; i++) await store.setEmbedding(rows[i].t, rows[i].id, vecs[i]);
       done += rows.length;
     }
@@ -1111,7 +1116,7 @@ document.addEventListener('submit', async (e) => {
       if (from) await store.removeSticky(from);
       toast(from ? '書いた。付箋ははがした' : edit ? '直した' : '書いた'); closeModal(); backfill();
       const h = `#/n/${box.id}`;
-      if (location.hash === h && !from) { boxCtx.writing = null; boxCtx.cards = await store.cards(box.id); await loadMeta(); redraw(); } else location.hash = h;
+      if (location.hash === h && !from) { boxCtx.writing = null; boxCtx.cards = await store.cards(box.id); redraw(); loadMeta().catch(() => {}); } else location.hash = h;
       return;
     } else if (f.dataset.form === 'pitem') {
       const edit = f.dataset.edit;
@@ -1122,7 +1127,7 @@ document.addEventListener('submit', async (e) => {
         await store.addCard({ box_id: boxCtx.b.id, kind: 'row', labels: [part], tags: tag ? [tag] : [], body, seq });
         if (tag && !boxCtx.links.some((l) => (l.a === tag || l.b === tag))) { await store.addLink(boxCtx.b.id, tag); boxCtx.links = await store.links(boxCtx.b.id); }
       }
-      boxCtx.writing = null; boxCtx.cards = await store.cards(boxCtx.b.id); await loadMeta(); redraw(); backfill();
+      boxCtx.writing = null; boxCtx.cards = await store.cards(boxCtx.b.id); redraw(); loadMeta().catch(() => {}); backfill();
       const again = f.dataset.tag ? document.querySelector(`.pform[data-part="point"][data-tag="${f.dataset.tag}"] input`) : document.querySelector(`.pform[data-part="${f.dataset.part}"] input`);
       if (!edit) again?.focus({ preventScroll: true });
       return;
@@ -1130,7 +1135,7 @@ document.addEventListener('submit', async (e) => {
       const main = boxCtx.cards.find((c) => c.kind === 'trans' && c.box_id === boxCtx.b.id && !c.section_id);
       if (main) await store.patchCard(main.id, { body, embedding: null });
       else await store.addCard({ box_id: boxCtx.b.id, kind: 'trans', seq: 0, body });
-      boxCtx.writing = null; boxCtx.cards = await store.cards(boxCtx.b.id); await loadMeta(); redraw(); toast('しまった'); backfill();
+      boxCtx.writing = null; boxCtx.cards = await store.cards(boxCtx.b.id); redraw(); loadMeta().catch(() => {}); toast('しまった'); backfill();
       return;
     } else if (f.dataset.form === 'trans') {
       const secId = f.dataset.sec, editing = f.dataset.edit;
@@ -1138,24 +1143,24 @@ document.addEventListener('submit', async (e) => {
       const want = para ? [] : String(fd.get('refs') || '').split(/[,、，\s]+/).map((x) => z2h(x).replace(/^第|項$/g, '').toUpperCase()).filter(Boolean);
       const para_ids = para ? (old ? old.para_ids : [para]) : boxCtx.paras.filter((p) => want.includes(String(p.label).toUpperCase())).map((p) => p.id);
       const miss = want.filter((l) => !boxCtx.paras.some((p) => String(p.label).toUpperCase() === l));
-      if (editing) await store.patchCard(editing, { body, para_ids, labels: [], embedding: null });
+      if (editing) { await store.patchCard(editing, { body, para_ids, labels: [], embedding: null }); Object.assign(old, { body, para_ids, labels: [] }); }
       else {
         const seq = Math.max(0, ...boxCtx.cards.filter((c) => c.kind === 'trans' && c.section_id === secId).map((c) => c.seq || 0)) + 1;
-        await store.addCard({ box_id: boxCtx.b.id, kind: 'trans', section_id: secId, seq, body, para_ids });
+        boxCtx.cards.push(await store.addCard({ box_id: boxCtx.b.id, kind: 'trans', section_id: secId, seq, body, para_ids }));
       }
       boxCtx.writing = null;
-      boxCtx.cards = await store.cards(boxCtx.b.id); await loadMeta(); redraw();
+      redraw(); loadMeta().catch(() => {});
       toast(miss.length ? `${editing ? '直した' : '書いた'}。見つからない項：${miss.join('、')}` : editing ? '直した' : '書いた');
       backfill();
     } else if (f.dataset.form === 'row') {
       const seq = boxCtx.cards.filter((c) => c.kind === 'row').length;
       const ax = fd.get('axis');
       await store.addCard({ box_id: boxCtx.b.id, kind: 'row', axis: ax === 'zenpan' ? null : ax, labels: ax === 'zenpan' ? [...fd.getAll('labels'), 'zenpan'] : fd.getAll('labels'), body, seq });
-      boxCtx.writing = { adding: true }; boxCtx.cards = await store.cards(boxCtx.b.id); await loadMeta(); redraw(); backfill();
+      boxCtx.writing = { adding: true }; boxCtx.cards = await store.cards(boxCtx.b.id); redraw(); loadMeta().catch(() => {}); backfill();
     } else if (f.dataset.form === 'rowEdit') {
       const ax = fd.get('axis');
       await store.patchCard(f.dataset.edit, { axis: ax === 'zenpan' ? null : ax, labels: ax === 'zenpan' ? [...fd.getAll('labels'), 'zenpan'] : fd.getAll('labels'), body, embedding: null });
-      boxCtx.writing = null; boxCtx.cards = await store.cards(boxCtx.b.id); await loadMeta(); redraw(); backfill();
+      boxCtx.writing = null; boxCtx.cards = await store.cards(boxCtx.b.id); redraw(); loadMeta().catch(() => {}); backfill();
     }
   } catch (err) { fail(err); }
 });
@@ -1205,13 +1210,13 @@ document.addEventListener('click', async (e) => {
         const c = boxCtx.cards.find((x) => x.id === d.id), labs = (c.labels || []).filter((x) => x !== 'mise');
         if (d.ax === 'kiso') { const k = knCard('kiso'); await knSave('kiso', (k ? k.body + '\n' : '') + c.body); await store.removeCard(c.id); }
         else await store.patchCard(c.id, d.ax === 'zenpan' ? { axis: null, labels: [...labs, 'zenpan'] } : { axis: d.ax, labels: labs });
-        boxCtx.cards = await store.cards(boxCtx.b.id); await loadMeta(); redraw(); return;
+        boxCtx.cards = await store.cards(boxCtx.b.id); redraw(); loadMeta().catch(() => {}); return;
       }
       case 'oldToMise': {
         const old = boxCtx.cards.filter((c) => c.kind === 'trans' && c.box_id === boxCtx.b.id && (c.labels || []).some((l) => /^kn:(?!kiso)/.test(l)));
         await addMise(old.flatMap((c) => notionLines(c.body)));
         for (const c of old) await store.removeCard(c.id);
-        boxCtx.cards = await store.cards(boxCtx.b.id); await loadMeta(); redraw(); return;
+        boxCtx.cards = await store.cards(boxCtx.b.id); redraw(); loadMeta().catch(() => {}); return;
       }
       case 'heading': {   // 今の行の頭に「■」をつける（ついていたら外す）
         const t = fmtTarget(act); const v = t.value, at = t.selectionStart;
@@ -1282,7 +1287,7 @@ document.addEventListener('click', async (e) => {
         if (!confirm('この行を消す？')) return;
         const c = boxCtx.cards.find((x) => x.id === d.id);
         await store.removeCard(d.id); boxCtx.writing = null;
-        boxCtx.cards = await store.cards(boxCtx.b.id); await loadMeta(); redraw(); toast('消した'); return;
+        boxCtx.cards = await store.cards(boxCtx.b.id); redraw(); loadMeta().catch(() => {}); toast('消した'); return;
       }
       case 'mark': await applyMark(); return;
       case 'material': {
@@ -1312,9 +1317,9 @@ document.addEventListener('click', async (e) => {
       case 'file': openPicker('納める箱を選ぶ', (b) => b && fileKakera(d.id, b)); return;
       case 'lettersMore': { const y = scrollY; await loadLetters(true); redraw(); scrollTo(0, y); return; }
       case 'wordAdd': { const w = wordPick; if (!w) return; await addWord(w.word, $('wMean')?.value.trim() || w.mean, w.sent, w.from); closeModal(); const kn = new Set([w.word]); document.querySelectorAll('.article .w').forEach((n) => { if (knownForm(kn, n.textContent)) n.classList.add('saved'); }); return; }
-      case 'wordOk': { const c = boxCtx.cards.find((x) => x.id === d.id); await store.patchCard(c.id, { ok_at: c.ok_at ? null : new Date().toISOString() }); boxCtx.cards = await store.cards(boxCtx.b.id); await loadMeta(); redraw(); return; }
+      case 'wordOk': { const c = boxCtx.cards.find((x) => x.id === d.id); await store.patchCard(c.id, { ok_at: c.ok_at ? null : new Date().toISOString() }); boxCtx.cards = await store.cards(boxCtx.b.id); redraw(); loadMeta().catch(() => {}); return; }
       case 'wordEditOpen': boxCtx.writing = { word: d.id }; redraw(); return;
-      case 'wordDel': if (!confirm('この単語を消す？')) return; await store.removeCard(d.id); boxCtx.writing = null; boxCtx.cards = await store.cards(boxCtx.b.id); await loadMeta(); redraw(); toast('消した'); return;
+      case 'wordDel': if (!confirm('この単語を消す？')) return; await store.removeCard(d.id); boxCtx.writing = null; boxCtx.cards = await store.cards(boxCtx.b.id); redraw(); loadMeta().catch(() => {}); toast('消した'); return;
       case 'spring': { const r = await store.spring(); if (r && $('springOne')) $('springOne').innerHTML = springCard(r); return; }
       case 'izumiMore': viewIzumi(renderSeq, true); return;
       case 'import': openImport(); return;
@@ -1331,8 +1336,13 @@ document.addEventListener('click', async (e) => {
   } catch (err) { fail(err); }
 });
 // 箇条書き・番号の行で改行したら、次の行も「・」や次の番号で始める（空の行で改行したら終える）
+for (const ev of ['input', 'pointerdown', 'submit']) document.addEventListener(ev, () => { lastTouch = Date.now(); }, true);
+// 日本語入力の確定の Enter では、番号・「・」を続けない
+let compEnd = 0;
+document.addEventListener('compositionend', () => { compEnd = Date.now(); }, true);
 document.addEventListener('keydown', (e) => {
   const t = e.target;
+  if (e.isComposing || e.keyCode === 229 || Date.now() - compEnd < 300) return;
   if (t.tagName !== 'TEXTAREA' || t.id === 'knText' || e.key !== 'Enter' || e.isComposing || e.shiftKey) return;
   const v = t.value, at = t.selectionStart, st = v.lastIndexOf('\n', at - 1) + 1;
   const line = v.slice(st, at);

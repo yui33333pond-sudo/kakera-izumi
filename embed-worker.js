@@ -4,6 +4,7 @@ import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transfo
 
 env.allowLocalModels = false;
 env.useBrowserCache = true;
+if (env.backends?.onnx?.wasm) env.backends.onnx.wasm.numThreads = 1;   // 1本だけで計算して、画面の動きに余裕を残す
 
 // 文書探しのために学習された多言語の小さなモデル（384次元・512トークンまで読める）
 // 探す言葉には「query: 」、しまうものには「passage: 」を頭に付ける決まり
