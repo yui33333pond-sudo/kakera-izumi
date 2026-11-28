@@ -84,7 +84,7 @@ export function supabaseStore(sb) {
       return must(await q);
     },
     async letters(limit, before) {   // メルマガ（Gmail・Yahoo から来たもの）の1通目の段落
-      let q = sb.from('kakera').select('id, body, created_at, source, group_id').eq('seq', 0).in('source', ['gmail', 'yahoo']).order('created_at', { ascending: false }).limit(limit);
+      let q = sb.from('kakera').select('id, body, created_at, source, group_id').eq('seq', 0).is('filed_at', null).in('source', ['gmail', 'yahoo']).order('created_at', { ascending: false }).limit(limit);
       if (before) q = q.lt('created_at', before);
       return must(await q);
     },
@@ -171,7 +171,7 @@ export function memoryStore() {
     async kakera(x) { const r = find('kakera', x); return r ? pub(r) : null; },
     async siblings(g) { return T.kakera.filter((k) => k.group_id === g).sort((a, b) => a.seq - b.seq).map(pub); },
     async unfiled(limit, before) { return T.kakera.filter((k) => !k.filed_at && !k.seq && (!before || k.created_at < before)).sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, limit).map(pub); },
-    async letters(limit, before) { return T.kakera.filter((k) => !k.seq && ['gmail', 'yahoo'].includes(k.source) && (!before || k.created_at < before)).sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, limit).map(pub); },
+    async letters(limit, before) { return T.kakera.filter((k) => !k.seq && !k.filed_at && ['gmail', 'yahoo'].includes(k.source) && (!before || k.created_at < before)).sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, limit).map(pub); },
     async fileKakera(ids) { for (const x of ids) { const r = find('kakera', x); if (r) r.filed_at = now(); } },
     async unfiledCount() { return T.kakera.filter((k) => !k.filed_at && !k.seq).length; },
     async kvGet(k) { return kv.has(k) ? kv.get(k) : null; },

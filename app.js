@@ -759,7 +759,7 @@ function closeModal() { $('modal').hidden = true; $('modal').innerHTML = ''; pic
 // 英字のメルマガかどうか：かなと漢字より英字がずっと多い
 const isEnglish = (t) => { const s = String(t); const en = (s.match(/[A-Za-z]/g) || []).length, ja = (s.match(/[぀-ヿ一-鿿]/g) || []).length; return en > 40 && en > ja * 4; };
 const isLetter = (k) => ['gmail', 'yahoo'].includes(k.source) && isEnglish(k.body);
-const letterHead = (k) => { const m = String(k.body).match(/^【([^】]*)】([^\n]*)\n*([\s\S]*)$/); return m ? { from: m[1], subject: m[2].trim() || '（件名なし）', rest: m[3] } : { from: k.source, subject: short(k.body, 60), rest: k.body }; };
+const letterHead = (k) => { const m = String(k.body).match(/^【([^】]*)】([^\n]*)\n*([\s\S]*)$/); return m ? { from: m[1], subject: m[2].trim() || '（件名なし）', rest: m[3] } : { from: k.source === 'filed' ? '' : k.source || '', subject: short(k.body.split('\n')[0], 60), rest: k.body }; };
 const paperBox = () => byKey.get('eigo/英字新聞'), wordBox = () => byKey.get('eigo/単語帳');
 let letterRows = [];
 async function loadLetters(more) {
@@ -768,28 +768,42 @@ async function loadLetters(more) {
   letterRows = more ? [...letterRows, ...en] : en;
   letterRows.end = page.length < 40;
 }
-const letterList = () => `<div class="stack letters">${letterRows.map((k) => { const h = letterHead(k); return `<a class="letter neon" href="#/letter/${k.id}"><span class="d num">${dlabel(k.created_at)} · ${esc(h.from)}</span><b>${esc(h.subject)}</b><span class="b">${esc(short(h.rest, 110))}</span></a>`; }).join('')
+const letterList = () => `<div class="stack letters">${letterRows.map((k) => { const h = letterHead(k); return `<a class="letter neon" href="#/letter/${k.id}"><span class="d num">${dlabel(k.created_at)}${h.from ? ' · ' + esc(h.from) : ''}</span><b>${esc(h.subject)}</b><span class="b">${esc(short(h.rest, 110))}</span></a>`; }).join('')
   || '<p class="hint">まだ届いていない。英語のメルマガが Gmail に来ると、1時間以内にここに並ぶ。</p>'}</div>`
   + (letterRows.end ? '' : '<button class="btn ghost" data-act="lettersMore">もっと前</button>');
-function paperBody() { return `<section>${letterList()}</section>`; }
+function paperBody() {   // 届いたメルマガ＋「箱に納める」でここに入れたもの（追記）
+  const { b, cards } = boxCtx;
+  const filed = cards.filter((c) => c.kind === 'note' && c.box_id === b.id).map((c) => ({ id: 'c:' + c.id, body: c.body, created_at: c.created_at, source: 'filed' }));
+  const saved = letterRows;
+  letterRows = [...saved, ...filed].sort((a, c) => c.created_at.localeCompare(a.created_at)); letterRows.end = saved.end;
+  const html = `<section>${letterList()}</section>`;
+  letterRows = saved;
+  return html;
+}
 
 // 単語を押せるようにする：英字の並びを <span class="w"> に
-const known = () => new Set(cardMeta.filter((c) => c.kind === 'row' && (c.labels || []).includes('word')).map((c) => c.body.split('\n')[0].toLowerCase()));
+let knownSet = new Set();   // 単語帳にある単語（小文字）
+async function loadKnown() { const wb = wordBox(); knownSet = new Set(wb ? (await store.cards(wb.id)).filter((c) => c.kind === 'row' && (c.labels || []).includes('word')).map((c) => c.body.split('\n')[0].toLowerCase()) : []); return knownSet; }
+const known = () => knownSet;
 const knownForm = (kn, x) => { const w = x.toLowerCase(); return kn.has(w) || ['s', 'es', 'd', 'ed', 'ing'].some((e) => w.endsWith(e) && (kn.has(w.slice(0, -e.length)) || kn.has(w.slice(0, -e.length) + 'e'))) || (w.endsWith('ies') && kn.has(w.slice(0, -3) + 'y')); };
 function tapText(text, kn) {
   return String(text).split('\n').map((ln) => `<span class="trline">${ln.split(/([A-Za-z][A-Za-z'’-]*[A-Za-z]|[A-Za-z])/).map((x, i) => i % 2 ? `<span class="w${knownForm(kn, x) ? ' saved' : ''}">${esc(x)}</span>` : esc(x)).join('') || '&nbsp;'}</span>`).join('');
 }
 async function viewLetter(id, my) {
-  const k = await store.kakera(id);
-  await loadMeta();
+  await Promise.all([loadMeta(), loadKnown()]);
+  let k = null, parts = null;
+  if (id.startsWith('c:')) {   // 箱に納めた1枚（段落は空行で分かれている）
+    const pb = paperBox(), c = pb && (await store.cards(pb.id)).find((x) => x.id === id.slice(2));
+    if (c) { k = { ...c, source: 'filed' }; parts = letterHead(k).rest.split(/\n{2,}/); }
+  } else {
+    k = await store.kakera(id);
+    if (k) { const sibs = k.group_id ? await store.siblings(k.group_id) : [k]; const rest = letterHead(k).rest; parts = (sibs.length ? sibs : [k]).map((x, i) => (i === 0 ? rest : x.body)); }
+  }
   if (!live(my)) return;
   if (!k) { location.hash = '#/'; return; }
-  const sibs = k.group_id ? await store.siblings(k.group_id) : [k];
-  if (!live(my)) return;
   const h = letterHead(k), sh = shelfOf('eigo'), pb = paperBox(), kn = known();
   crumbs([{ t: sh.name, href: '#/s/eigo' }, { t: '英字新聞', href: pb ? `#/n/${pb.id}` : null }, { t: short(h.subject, 24) }]);
-  const parts = (sibs.length ? sibs : [k]).map((x, i) => (i === 0 ? h.rest : x.body));
-  paint(`<div class="boxv" style="${shVars(sh)}"><div class="box-head"><p class="path num">${dlabel(k.created_at)} · ${esc(h.from)}</p><h1 class="glow article-t">${esc(h.subject)}</h1><p class="hint small">わからない単語を押すと、意味が出る。単語帳に足せる。</p></div>`
+  paint(`<div class="boxv" style="${shVars(sh)}"><div class="box-head"><p class="path num">${dlabel(k.created_at)}${h.from ? ' · ' + esc(h.from) : ''}</p><h1 class="glow article-t">${esc(h.subject)}</h1><p class="hint small">わからない単語を押すと、意味が出る。単語帳に足せる。</p></div>`
     + `<article class="article">${parts.map((p) => `<p class="ap">${tapText(p, kn)}</p>`).join('')}</article></div>`);
 }
 // 押した単語のまわりの1文（例文として残す）
@@ -818,7 +832,7 @@ async function openWord(word, sent, from) {
 async function addWord(word, mean, sent, from) {
   const wb = wordBox(); if (!wb) return;
   await store.addCard({ box_id: wb.id, kind: 'row', labels: ['word'], body: [word, mean || '', sent || '', from || ''].join('\n'), seq: 0 });
-  await loadMeta();
+  await loadMeta(); knownSet.add(word.toLowerCase());
   toast(`「${word}」を単語帳に足した`);
   backfill();
 }
@@ -889,7 +903,7 @@ document.addEventListener('submit', async (e) => {
         const w = String(fd.get('word') || '').trim(); if (!w) return;
         const r = /^[A-Za-z]/.test(w) ? await import('./dict.js').then((m) => m.lookup(w)).catch(() => null) : null;
         const word = r ? r.word : w.toLowerCase();
-        if (known().has(word)) { toast(`「${word}」はもうある`); return; }
+        if ((await loadKnown()).has(word)) { toast(`「${word}」はもうある`); return; }
         await addWord(word, r ? r.senses.slice(0, 2).join(' / ') : '', '', '');
       } else {
         const c = boxCtx.cards.find((x) => x.id === f.dataset.edit), [word, , , from] = c.body.split('\n');
