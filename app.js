@@ -208,6 +208,7 @@ async function viewNode(n, my, focus) {
   const direct = ch.filter((c) => c.is_box), sub = ch.filter((c) => !c.is_box);
   paint(`<div class="shelf-head" style="${shVars(sh)}">${shapeSvg(sh.shape, sh.color, 30)}<h1>${esc(isShelf ? sh.name : n.title)}</h1></div>`
     + (isShelf && n.shelf === 'genba' ? '<div class="row"><button class="btn" data-act="procAdd">手続を足す</button></div>' : '')
+    + (n.shelf === 'kamoku' ? `<div class="row"><button class="btn" data-act="kamokuAdd"${isShelf ? '' : ` data-parent="${esc(n.key)}"`}>科目を足す</button></div>` : '')
     + (direct.length ? `<div class="tiles">${direct.map(tile).join('')}</div>` : '')
     + sub.map((g) => group(g, 0)).join('')
     + (!ch.length ? `<p class="hint">${'まだ箱がない。'}</p>` : ''));
@@ -258,7 +259,7 @@ function trText(body) {
     let m;
     if ((m = ln.match(NUM_RE))) { open('ol'); list.html += `<li><span class="mk">${esc(m[1])}</span>${esc(m[2])}</li>`; }
     else if ((m = ln.match(BUL_RE))) { open('ul'); list.html += `<li>${esc(m[1])}</li>`; }
-    else { flush(); out.push(`<span class="trline">${esc(ln) || '&nbsp;'}</span>`); }
+    else { flush(); const ind = ln.match(/^[ \t\u3000]*/)[0], n = [...ind].reduce((a, ch) => a + (ch === ' ' ? 0.5 : 1), 0), t = ln.slice(ind.length); out.push(`<span class="trline"${n ? ` style="padding-left:${Math.min(n, 6)}em"` : ''}>${esc(t) || '&nbsp;'}</span>`); }
   }
   flush();
   return out.join('');
@@ -441,6 +442,40 @@ function kankiBody() {
 
 // 勘定科目：アサーション軸ごとに、色ラベル付きの行
 const labHtml = (l, rowColor) => { const L = LABELS[l]; return L ? `<span class="lab" style="--lc:${L[1] || rowColor || '#C9CFDB'}">${L[0]}</span>` : ''; };
+// 勘定科目のノート（Notion と同じ見出し）。1つの欄＝1枚（kind 'trans'・節なし・labels に 'kn:欄'）
+const KNOTE = [['kiso', '基礎知識'], ['risk', '科目特有のリスク・留意事項'], ['tosei', '内部統制上の留意事項'], ['kaiji', '開示上の留意事項'], ['topic', 'トピック']];
+const knCard = (k) => boxCtx.cards.find((c) => c.kind === 'trans' && c.box_id === boxCtx.b.id && (c.labels || []).includes('kn:' + k));
+function knoteHtml() {
+  const w = (boxCtx.writing || {}).kn;
+  return `<div class="row"><p class="lbl" style="margin:0">ノート</p><span class="grow"></span><button class="btn ghost small" data-act="knPaste">Notion から貼る</button></div>`
+    + KNOTE.map(([k, name], i) => {
+      const c = knCard(k);
+      const inner = w === k
+        ? `<form class="trform" data-form="knote" data-kn="${k}"><label class="sr" for="trBody">${name}</label><textarea id="trBody" name="body" rows="10" placeholder="自由に（行頭の空白で字下げ・「・」・「①」が使える）">${esc(c ? c.body : '')}</textarea>`
+          + `<div class="row"><button type="button" class="btn ghost small" data-act="bullet">・ 箇条書き</button><button type="button" class="btn ghost small" data-act="numbered">① 番号</button><span class="grow"></span><button type="button" class="btn ghost small" data-act="trCancel">やめる</button><button class="btn small">しまう</button></div></form>`
+        : c ? `<div class="tr">${trText(c.body)}</div><div class="row"><button class="gen fix" data-act="knEdit" data-kn="${k}">直す</button></div>`
+        : `<p class="none">まだない</p><button class="gen fix" data-act="knEdit" data-kn="${k}">書く</button>`;
+      return `<section class="fr neon knfr"><p class="lbl">${i + 1}) ${name}</p>${inner}</section>`;
+    }).join('');
+}
+// Notion から貼った文を、見出し（#### 1) 基礎知識 など）で欄に分ける。見出しより前は基礎知識へ
+function splitNotion(text) {
+  const out = Object.fromEntries(KNOTE.map(([k]) => [k, []]));
+  const which = (h) => /基礎/.test(h) ? 'kiso' : /内部統制/.test(h) ? 'tosei' : /開示/.test(h) ? 'kaiji' : /リスク|留意/.test(h) ? 'risk' : /トピック/.test(h) ? 'topic' : null;
+  let cur = 'kiso';
+  for (const ln of String(text).replace(/\r/g, '').split('\n')) {
+    const h = ln.match(/^\s*#{1,6}\s*(.*)$/);
+    if (h) { const k = which(h[1]); if (k) cur = k; else { cur = 'topic'; out.topic.push('【' + h[1].replace(/^\d*\s*[)）]\s*/, '').trim() + '】'); } continue; }
+    if (ln.trim()) out[cur].push(ln.replace(/\s+$/, ''));
+  }
+  return Object.fromEntries(Object.entries(out).map(([k, v]) => [k, v.join('\n')]).filter(([, v]) => v && !/^(特になし|なし)$/.test(v.trim())));
+}
+async function knSave(k, body) {
+  const c = knCard(k);
+  if (c && !body) await store.removeCard(c.id);
+  else if (c) await store.patchCard(c.id, { body, embedding: null });
+  else if (body) await store.addCard({ box_id: boxCtx.b.id, kind: 'trans', body, labels: ['kn:' + k], seq: 0 });
+}
 function kamokuBody() {
   const rows = boxCtx.cards.filter((c) => c.kind === 'row' && c.box_id === boxCtx.b.id);
   const rowHtml = (r, col) => `<div class="krow"><p>${(r.labels || []).map((l) => labHtml(l, col)).join('')}${esc(r.body)}</p>`
@@ -451,7 +486,7 @@ function kamokuBody() {
   const fromProc = boxCtx.cards.filter((c) => c.kind === 'row' && c.box_id !== boxCtx.b.id && (c.labels || []).includes('point'));
   const procs = [...new Set(fromProc.map((c) => c.box_id))].map((id) => byId.get(id)).filter(Boolean);
   const procHtml = procs.length ? `<div class="fr neon procfr" style="${shVars(shelfOf('genba'))}"><p class="lbl">手続から</p>${procs.map((pb) => `<div class="pgrp"><a class="tag" href="#/n/${pb.id}" style="${shVars(shelfOf('genba'))}">${esc(pb.title)}</a><ul class="plist">${fromProc.filter((c) => c.box_id === pb.id).map((c) => `<li>${esc(c.body)}</li>`).join('')}</ul></div>`).join('')}</div>` : '';
-  return `<div class="fr afr neon"><p class="lbl">アサーション</p>${IN_ASSERTION.map((ax) => `<div class="tube" style="${vars(ax)}"><h3>${nameOf(ax)}</h3>${list(ax)}</div>`).join('')}</div>`
+  return knoteHtml() + `<p class="lbl" style="margin-top:28px">アサーションで見る（1〜2行の行）</p><div class="fr afr neon"><p class="lbl">アサーション</p>${IN_ASSERTION.map((ax) => `<div class="tube" style="${vars(ax)}"><h3>${nameOf(ax)}</h3>${list(ax)}</div>`).join('')}</div>`
     + `<div class="duo">${AXES.filter(([k]) => !IN_ASSERTION.includes(k)).map(([ax, n]) => `<div class="fr neon" style="${vars(ax)}"><h3>${n}</h3>${list(ax)}</div>`).join('')}</div>`
     + procHtml
     + `<details class="addrow"><summary>行を足す</summary><form data-form="row"><select name="axis" aria-label="軸">${AXES.map(([k, n]) => `<option value="${k}">${n}</option>`).join('')}</select>`
@@ -969,6 +1004,30 @@ document.addEventListener('submit', async (e) => {
   const f = e.target.closest('[data-form]'); if (!f) return;
   e.preventDefault();
   const fd = new FormData(f);
+  if (f.dataset.form === 'knote' || f.dataset.form === 'knPaste') {
+    try {
+      if (f.dataset.form === 'knote') await knSave(f.dataset.kn, String(fd.get('body') || '').replace(/\s+$/, ''));
+      else {
+        const parts = splitNotion(fd.get('body'));
+        if (!Object.keys(parts).length) { toast('見出しも中身も読めなかった'); return; }
+        const over = Object.keys(parts).filter((k) => knCard(k));
+        if (over.length && !confirm(`${over.map((k) => KNOTE.find(([x]) => x === k)[1]).join('、')} は、いまある中身を置き換える。いい？`)) return;
+        for (const [k, v] of Object.entries(parts)) await knSave(k, v);
+        closeModal(); toast(`${Object.keys(parts).length}つの欄に入れた`);
+      }
+      boxCtx.writing = null; boxCtx.cards = await store.cards(boxCtx.b.id); redraw(); backfill();
+    } catch (err) { fail(err); }
+    return;
+  }
+  if (f.dataset.form === 'kamoku') {
+    try {
+      const t = String(fd.get('title') || '').trim(), par = byKey.get(String(fd.get('parent'))); if (!t || !par) return;
+      const key = `${par.key}/${t}`;
+      if (!byKey.has(key)) { await store.seedNodes([{ shelf: 'kamoku', key, parent_key: par.key, title: t, sort: `${par.sort}.9.${t}`, is_box: true }]); await loadLibrary(); }
+      closeModal(); location.hash = `#/n/${byKey.get(key).id}`;
+    } catch (err) { fail(err); }
+    return;
+  }
   if (f.dataset.form === 'word' || f.dataset.form === 'wordEdit') {
     try {
       if (f.dataset.form === 'word') {
@@ -1101,6 +1160,15 @@ document.addEventListener('click', async (e) => {
       case 'diaryNew': { const b = await monthBox(localDay().slice(0, 7)); location.hash = `#/n/${b.id}`; return; }
       case 'diaryEdit': boxCtx.writing = { diary: d.id }; redraw(); $('trBody')?.focus({ preventScroll: true }); return;
       case 'stDiary': { const st = stickies.find((x) => x.id === d.id); const b = await monthBox(localDay(new Date(st ? st.created_at : Date.now())).slice(0, 7)); location.hash = `#/n/${b.id}?from=${d.id}`; return; }
+      case 'knEdit': boxCtx.writing = { kn: d.kn }; redraw(); $('trBody')?.focus({ preventScroll: true }); return;
+      case 'knPaste': openModal('Notion から貼る', `<form class="trform" data-form="knPaste"><p class="hint small">ページの中身をまるごと貼る。「#### 1) 基礎知識」のような見出しで、欄に分けて入れる。見出しのない文は基礎知識へ。「特になし」は入れない。</p><label class="sr" for="knText">貼る</label><textarea id="knText" name="body" rows="12"></textarea><div class="row"><span class="grow"></span><button class="btn small">分けて入れる</button></div></form>`); return;
+      case 'kamokuAdd': {
+        const groups = nodes.filter((n) => n.shelf === 'kamoku' && !n.is_box).sort((a, b) => a.sort.localeCompare(b.sort));
+        openModal('科目を足す', `<form class="bookform" data-form="kamoku"><label for="kTitle">科目の名前</label><input type="text" id="kTitle" name="title" placeholder="例：未収入金、ソフトウェア" autocomplete="off" required>`
+          + `<label for="kPar">入れる場所</label><select id="kPar" name="parent">${groups.map((g) => `<option value="${esc(g.key)}"${g.key === d.parent ? ' selected' : ''}>${esc(pathOf(g).map((x) => x.title).join(' › '))}</option>`).join('')}</select>`
+          + `<div class="row"><span class="grow"></span><button class="btn">足す</button></div></form>`);
+        $('kTitle').focus(); return;
+      }
       case 'procAdd': {
         const t = (prompt('手続の名前（例：残高確認、売上の詳細テスト）') || '').trim(); if (!t) return;
         const key = `genba/${t}`;
