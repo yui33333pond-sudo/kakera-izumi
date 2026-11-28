@@ -366,3 +366,30 @@ input[type=date]{width:100%;font:inherit;font-size:16px;border:1.5px solid var(-
 .plist{margin:4px 0 0;padding-left:1.2em}
 .plist li{font-size:16px;line-height:1.6}
 .plist li::marker{color:var(--c)}
+
+/* 英語：英字新聞・記事・単語帳 */
+.letter{display:grid;gap:3px;text-decoration:none;border-radius:12px;padding:12px 14px}
+.letter .d{font-size:13px;color:var(--mute)}
+.letter b{font-size:17px;line-height:1.45;color:var(--ct)}
+.letter .b{font-size:15px;color:#C9CFDB;line-height:1.6}
+.article-t{font-size:22px;font-family:var(--num),var(--jp);letter-spacing:.01em}
+.article{font-family:Georgia,"Times New Roman",serif;font-size:18px;line-height:1.85;color:#E6EAF2}
+.article .ap{margin:0 0 18px}
+.article .trline{display:block}
+.article .w{cursor:pointer;border-radius:3px;-webkit-tap-highlight-color:transparent}
+.article .w:active{background:color-mix(in srgb,var(--c) 30%,transparent)}
+.article .w.saved{color:var(--c);text-decoration:underline dotted;text-underline-offset:4px}
+.wordpop{display:grid;gap:8px;padding-top:4px}
+.senses{margin:0;padding-left:22px;font-size:17px}
+.senses li{margin:2px 0}
+.ex{font-family:Georgia,serif;font-style:italic;font-size:15px;color:var(--mute);border-left:2px solid var(--c);padding-left:10px;margin:4px 0}
+.words{display:grid;gap:10px;margin-top:10px}
+.word{border:1px solid var(--line);background:var(--soft);border-radius:12px;padding:10px 14px}
+.word.ok{opacity:.6}
+.wtop{display:flex;align-items:center;gap:8px}
+.wtop .wd{flex:1;font-family:Georgia,serif;font-size:20px;color:var(--ct)}
+.word .wm{margin:2px 0;font-size:16px}
+.word .d{margin:4px 0 0;font-size:12px;color:var(--mute)}
+.wform{display:grid;gap:8px;border:1.5px solid var(--c);border-radius:12px;padding:10px 14px}
+.wform .wd{font-family:Georgia,serif;font-size:20px}
+.wok.on{color:var(--bg);background:var(--c);border-color:var(--c)}

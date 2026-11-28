@@ -54,5 +54,11 @@ export async function seedDemo(store, byKey) {
     { body: '棚卸立会：次は保管場所の一覧を先にもらっておく', created_at: ago(30), seq: 0, group_id: null, source: 'hand' },
     { body: 'accrual って発生主義のことか。メルマガで出てきた', created_at: ago(40), seq: 0, group_id: null, source: 'hand' },
   ]);
+  const g = 'demo-letter-1';
+  store.put('kakera', [
+    { body: '【Morning Brief】Auditors face new rules on climate disclosures\n\nRegulators announced on Monday that auditors will be required to provide assurance over companies’ climate-related disclosures.', created_at: ago(1), seq: 0, group_id: g, source: 'gmail' },
+    { body: 'The new standard takes effect for fiscal years beginning after January 2027. Critics argue that the timeline is too aggressive, while investors have welcomed the move.', created_at: ago(1), seq: 1, group_id: g, source: 'gmail' },
+    { body: '【週刊ニュース】今週のまとめ\n\n日本語のメルマガはこれまでどおり前の泉に残る。', created_at: ago(3), seq: 0, group_id: 'demo-letter-2', source: 'gmail' },
+  ]);
   for (const k of ['kanki/200番台 総括/240', 'kamoku/貸借対照表/資産/流動資産/現金預金']) await store.touchNode(box(k).id);
 }

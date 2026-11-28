@@ -131,6 +131,7 @@ async function render() {
     else if (view === 'st') await viewSticky(a, my);
     else if (view === 'stickies') await viewStickies(my);
     else if (view === 'izumi') await viewIzumi(my);
+    else if (view === 'letter') await viewLetter(a, my);
     else location.hash = '#/';
   } catch (e) { fail(e); }
   if (!b) window.scrollTo(0, 0);
@@ -215,6 +216,7 @@ let boxCtx = null;   // 開いている箱の中身
 async function viewBox(b, my, focus) {
   store.touchNode(b.id).then(() => { b.opened_at = new Date().toISOString(); }).catch(() => {});
   const [secs, paras, cards, links, mk, bk] = await Promise.all([store.sections(b.id), store.paras(b.id), store.cards(b.id), store.links(b.id), store.kvGet('marks:' + b.id), b.shelf === 'hon' ? store.kvGet('books') : null, loadMeta()]);
+  if (b.key === 'eigo/英字新聞') await loadLetters(false);
   if (!live(my)) return;
   books = bk || books;
   marks = { box: b.id, by: mk || {} };
@@ -233,9 +235,11 @@ function drawBox(focus) {
   else if (b.shelf === 'hon') body = bookBody();
   else if (b.shelf === 'nichijo') body = diaryBody();
   else if (b.shelf === 'genba') body = procBody();
+  else if (b.key === 'eigo/英字新聞') body = paperBody();
+  else if (b.key === 'eigo/単語帳') body = wordsBody();
   const path = shelfCrumb(b).slice(0, -1);
   paint(`<div class="boxv" style="${shVars(sh)}"><div class="box-head"><p class="path">${path.map((x) => x.href ? `<a href="${x.href}">${esc(x.t)}</a>` : esc(x.t)).join(' › ')}</p><h1 class="glow">${esc(b.title)}</h1><div class="row"><a class="btn ghost small" href="#/prep/${b.id}">予習</a><button class="btn ghost small" data-act="link">つなぐ</button></div></div>`
-    + body + (b.shelf === 'nichijo' ? '' : notesBlock()) + `<section><h2>つながり</h2><div id="links" class="links">${linksHtml([])}</div></section></div>`);
+    + body + (b.shelf === 'nichijo' || b.shelf === 'eigo' ? '' : notesBlock()) + `<section><h2>つながり</h2><div id="links" class="links">${linksHtml([])}</div></section></div>`);
   if (focus) document.getElementById('sec-' + focus)?.scrollIntoView({ block: 'start' });
   if (boxCtx.fromSticky) { const t = document.querySelector('#noteForm textarea'); t?.scrollIntoView({ block: 'center' }); t?.focus(); }
 }
@@ -709,7 +713,7 @@ async function viewIzumi(my, more = false) {
   crumbs([{ t: '前の泉' }]);
   const part = await store.unfiled(30, more && izumiRows.length ? izumiRows[izumiRows.length - 1].created_at : null);
   if (!live(my)) return;
-  izumiRows = more ? [...izumiRows, ...part] : part;
+  izumiRows = more ? [...izumiRows, ...part.filter((k) => !isLetter(k))] : part.filter((k) => !isLetter(k));
   paint(`<h1 class="ptitle">前の泉のかけら</h1><p class="hint">「箱に納める」で、その箱の追記になる（日付はそのまま）。納めたものはここから消える。探す欄からも出てくる。</p>`
     + `<div class="stack">${izumiRows.map((k) => `<div class="hit"><span class="d">${dlabel(k.created_at)}${k.source && k.source !== 'hand' ? ' · ' + esc(k.source) : ''}</span><span class="b">${esc(short(k.body, 160))}</span><button class="btn ghost small" data-act="file" data-id="${k.id}">箱に納める</button></div>`).join('') || '<p class="hint">ぜんぶ納めた。</p>'}</div>`
     + (part.length === 30 ? '<button class="btn ghost" data-act="izumiMore">もっと前</button>' : ''));
@@ -750,6 +754,88 @@ function openModal(title, html) {
   $('modal').hidden = false;
 }
 function closeModal() { $('modal').hidden = true; $('modal').innerHTML = ''; pickCb = null; }
+
+// ---- 英語：英字新聞（メルマガが1通＝1枚で並ぶ）と単語帳（記事の単語を押して足す） ----
+// 英字のメルマガかどうか：かなと漢字より英字がずっと多い
+const isEnglish = (t) => { const s = String(t); const en = (s.match(/[A-Za-z]/g) || []).length, ja = (s.match(/[぀-ヿ一-鿿]/g) || []).length; return en > 40 && en > ja * 4; };
+const isLetter = (k) => ['gmail', 'yahoo'].includes(k.source) && isEnglish(k.body);
+const letterHead = (k) => { const m = String(k.body).match(/^【([^】]*)】([^\n]*)\n*([\s\S]*)$/); return m ? { from: m[1], subject: m[2].trim() || '（件名なし）', rest: m[3] } : { from: k.source, subject: short(k.body, 60), rest: k.body }; };
+const paperBox = () => byKey.get('eigo/英字新聞'), wordBox = () => byKey.get('eigo/単語帳');
+let letterRows = [];
+async function loadLetters(more) {
+  const page = await store.letters(40, more && letterRows.length ? letterRows[letterRows.length - 1].created_at : null);
+  const en = page.filter((k) => isEnglish(k.body));
+  letterRows = more ? [...letterRows, ...en] : en;
+  letterRows.end = page.length < 40;
+}
+const letterList = () => `<div class="stack letters">${letterRows.map((k) => { const h = letterHead(k); return `<a class="letter neon" href="#/letter/${k.id}"><span class="d num">${dlabel(k.created_at)} · ${esc(h.from)}</span><b>${esc(h.subject)}</b><span class="b">${esc(short(h.rest, 110))}</span></a>`; }).join('')
+  || '<p class="hint">まだ届いていない。英語のメルマガが Gmail に来ると、1時間以内にここに並ぶ。</p>'}</div>`
+  + (letterRows.end ? '' : '<button class="btn ghost" data-act="lettersMore">もっと前</button>');
+function paperBody() { return `<section>${letterList()}</section>`; }
+
+// 単語を押せるようにする：英字の並びを <span class="w"> に
+const known = () => new Set(cardMeta.filter((c) => c.kind === 'row' && (c.labels || []).includes('word')).map((c) => c.body.split('\n')[0].toLowerCase()));
+const knownForm = (kn, x) => { const w = x.toLowerCase(); return kn.has(w) || ['s', 'es', 'd', 'ed', 'ing'].some((e) => w.endsWith(e) && (kn.has(w.slice(0, -e.length)) || kn.has(w.slice(0, -e.length) + 'e'))) || (w.endsWith('ies') && kn.has(w.slice(0, -3) + 'y')); };
+function tapText(text, kn) {
+  return String(text).split('\n').map((ln) => `<span class="trline">${ln.split(/([A-Za-z][A-Za-z'’-]*[A-Za-z]|[A-Za-z])/).map((x, i) => i % 2 ? `<span class="w${knownForm(kn, x) ? ' saved' : ''}">${esc(x)}</span>` : esc(x)).join('') || '&nbsp;'}</span>`).join('');
+}
+async function viewLetter(id, my) {
+  const k = await store.kakera(id);
+  await loadMeta();
+  if (!live(my)) return;
+  if (!k) { location.hash = '#/'; return; }
+  const sibs = k.group_id ? await store.siblings(k.group_id) : [k];
+  if (!live(my)) return;
+  const h = letterHead(k), sh = shelfOf('eigo'), pb = paperBox(), kn = known();
+  crumbs([{ t: sh.name, href: '#/s/eigo' }, { t: '英字新聞', href: pb ? `#/n/${pb.id}` : null }, { t: short(h.subject, 24) }]);
+  const parts = (sibs.length ? sibs : [k]).map((x, i) => (i === 0 ? h.rest : x.body));
+  paint(`<div class="boxv" style="${shVars(sh)}"><div class="box-head"><p class="path num">${dlabel(k.created_at)} · ${esc(h.from)}</p><h1 class="glow article-t">${esc(h.subject)}</h1><p class="hint small">わからない単語を押すと、意味が出る。単語帳に足せる。</p></div>`
+    + `<article class="article">${parts.map((p) => `<p class="ap">${tapText(p, kn)}</p>`).join('')}</article></div>`);
+}
+// 押した単語のまわりの1文（例文として残す）
+function sentenceOf(el) {
+  const p = el.closest('.trline') || el.parentElement, text = p.textContent;
+  const idx = (() => { let i = 0; const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT); let n; while ((n = walker.nextNode())) { if (el.contains(n)) return i; i += n.textContent.length; } return 0; })();
+  const st = Math.max(text.lastIndexOf('. ', idx), text.lastIndexOf('? ', idx), text.lastIndexOf('! ', idx));
+  const ends = ['. ', '? ', '! '].map((s) => text.indexOf(s, idx)).filter((x) => x >= 0);
+  const en = ends.length ? Math.min(...ends) + 1 : text.length;
+  return text.slice(st < 0 ? 0 : st + 2, en).trim().slice(0, 300);
+}
+let wordPick = null;
+async function openWord(word, sent, from) {
+  openModal(word, '<p class="hint">辞書を引いてる…</p>');
+  const r = await import('./dict.js').then((m) => m.lookup(word)).catch(() => null);
+  if ($('modal').hidden) return;
+  wordPick = { word: r ? r.word : word.toLowerCase(), mean: r ? r.senses.slice(0, 2).join(' / ') : '', sent, from };
+  const has = known().has(wordPick.word);
+  $('modal').querySelector('.mpanel > p.hint')?.remove();
+  $('modal').querySelector('.mpanel').insertAdjacentHTML('beforeend',
+    `<div class="wordpop">${r ? `${r.word !== word.toLowerCase() ? `<p class="hint small">もとの形：<b>${esc(r.word)}</b></p>` : ''}<ol class="senses">${r.senses.slice(0, 6).map((s) => `<li>${esc(s)}</li>`).join('')}</ol>` : '<p class="hint">この辞書には載っていなかった。</p>'}`
+    + (sent ? `<p class="ex">${esc(sent)}</p>` : '')
+    + `<label class="sr" for="wMean">意味（直せる）</label><input type="text" id="wMean" value="${esc(wordPick.mean)}" placeholder="意味を自分で書く" autocomplete="off">`
+    + `<div class="row"><a class="btn ghost small" href="https://ejje.weblio.jp/content/${encodeURIComponent(wordPick.word)}" target="_blank" rel="noopener">Weblio</a><span class="grow"></span>${has ? '<span class="okmark">単語帳にある</span>' : '<button class="btn small" data-act="wordAdd">単語帳に足す</button>'}</div></div>`);
+}
+async function addWord(word, mean, sent, from) {
+  const wb = wordBox(); if (!wb) return;
+  await store.addCard({ box_id: wb.id, kind: 'row', labels: ['word'], body: [word, mean || '', sent || '', from || ''].join('\n'), seq: 0 });
+  await loadMeta();
+  toast(`「${word}」を単語帳に足した`);
+  backfill();
+}
+// 単語帳の箱：新しい順。覚えたら「覚えた」（納得と同じ数え方）
+function wordsBody() {
+  const { b, cards } = boxCtx, w = boxCtx.writing || {};
+  const list = cards.filter((c) => c.kind === 'row' && c.box_id === b.id && (c.labels || []).includes('word')).sort((a, c) => c.created_at.localeCompare(a.created_at));
+  const ok = list.filter((c) => c.ok_at).length;
+  return `<section><form class="pform" data-form="word"><input type="text" name="word" placeholder="単語を足す（例：accrual）" aria-label="単語" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn small">引いて足す</button></form>`
+    + (list.length ? `<p class="hint small num">${list.length}語 · 覚えた ${ok}</p>` : '')
+    + `<div class="words">${list.map((c) => {
+      const [word, mean, sent, from] = c.body.split('\n');
+      if (w.word === c.id) return `<form class="wform" data-form="wordEdit" data-edit="${c.id}"><b class="wd">${esc(word)}</b><input type="text" name="mean" value="${esc(mean || '')}" aria-label="意味" autocomplete="off"><textarea name="sent" rows="2" aria-label="例文">${esc(sent || '')}</textarea><div class="row"><button type="button" class="btn ghost small danger" data-act="wordDel" data-id="${c.id}">消す</button><button type="button" class="btn ghost small" data-act="trCancel">やめる</button><span class="grow"></span><button class="btn small">直す</button></div></form>`;
+      return `<article class="word${c.ok_at ? ' ok' : ''}"><div class="wtop"><b class="wd glow">${esc(word)}</b><button class="gen fix" data-act="wordEditOpen" data-id="${c.id}">直す</button><button class="gen wok${c.ok_at ? ' on' : ''}" data-act="wordOk" data-id="${c.id}">${c.ok_at ? '覚えた' : 'まだ'}</button></div>`
+        + (mean ? `<p class="wm">${esc(mean)}</p>` : '') + (sent ? `<p class="ex">${esc(sent)}</p>` : '') + `<p class="d num">${dlabel(c.created_at)}${from ? ' · ' + esc(from) : ''}</p></article>`;
+    }).join('') || '<p class="hint">まだない。英字新聞の記事で単語を押すと、ここに足せる。</p>'}</div></section>`;
+}
 
 // ---- 取り込む（Claude Code が content/ に書き出したファイル） ----
 let impPlan = null;
@@ -797,6 +883,23 @@ document.addEventListener('submit', async (e) => {
   const f = e.target.closest('[data-form]'); if (!f) return;
   e.preventDefault();
   const fd = new FormData(f);
+  if (f.dataset.form === 'word' || f.dataset.form === 'wordEdit') {
+    try {
+      if (f.dataset.form === 'word') {
+        const w = String(fd.get('word') || '').trim(); if (!w) return;
+        const r = /^[A-Za-z]/.test(w) ? await import('./dict.js').then((m) => m.lookup(w)).catch(() => null) : null;
+        const word = r ? r.word : w.toLowerCase();
+        if (known().has(word)) { toast(`「${word}」はもうある`); return; }
+        await addWord(word, r ? r.senses.slice(0, 2).join(' / ') : '', '', '');
+      } else {
+        const c = boxCtx.cards.find((x) => x.id === f.dataset.edit), [word, , , from] = c.body.split('\n');
+        await store.patchCard(c.id, { body: [word, String(fd.get('mean') || '').trim(), String(fd.get('sent') || '').trim(), from || ''].join('\n'), embedding: null });
+        boxCtx.writing = null;
+      }
+      boxCtx.cards = await store.cards(boxCtx.b.id); redraw();
+    } catch (err) { fail(err); }
+    return;
+  }
   const body = String(fd.get('body') || '').trim();
   if (!body) return;
   try {
@@ -883,6 +986,8 @@ document.addEventListener('click', async (e) => {
   const mk = e.target.closest('mark[data-pid]');
   if (mk && getSelection().isCollapsed) { pendingMark = { add: false, pid: mk.dataset.pid, mi: +mk.dataset.mi }; markBar('このマーカーを消す', true); return; }
   if (pendingMark && !pendingMark.add && !e.target.closest('#markBtn')) { pendingMark = null; markBar('', false); }
+  const wd = e.target.closest('.article .w');
+  if (wd && getSelection().isCollapsed) { const h = $('view').querySelector('.article-t'); openWord(wd.textContent, sentenceOf(wd), h ? h.textContent : ''); return; }
   const act = e.target.closest('[data-act]'); if (!act) return;
   const d = act.dataset;
   try {
@@ -991,6 +1096,11 @@ document.addEventListener('click', async (e) => {
       case 'pick': openPicker('追記する箱を選ぶ', (b) => { if (b) location.hash = `#/n/${b.id}?from=${d.id}`; }); return;
       case 'stDel': await store.removeSticky(d.id); toast('付箋をはがした'); location.hash = '#/'; return;
       case 'file': openPicker('納める箱を選ぶ', (b) => b && fileKakera(d.id, b)); return;
+      case 'lettersMore': { const y = scrollY; await loadLetters(true); redraw(); scrollTo(0, y); return; }
+      case 'wordAdd': { const w = wordPick; if (!w) return; await addWord(w.word, $('wMean')?.value.trim() || w.mean, w.sent, w.from); closeModal(); const kn = new Set([w.word]); document.querySelectorAll('.article .w').forEach((n) => { if (knownForm(kn, n.textContent)) n.classList.add('saved'); }); return; }
+      case 'wordOk': { const c = boxCtx.cards.find((x) => x.id === d.id); await store.patchCard(c.id, { ok_at: c.ok_at ? null : new Date().toISOString() }); boxCtx.cards = await store.cards(boxCtx.b.id); await loadMeta(); redraw(); return; }
+      case 'wordEditOpen': boxCtx.writing = { word: d.id }; redraw(); return;
+      case 'wordDel': if (!confirm('この単語を消す？')) return; await store.removeCard(d.id); boxCtx.writing = null; boxCtx.cards = await store.cards(boxCtx.b.id); await loadMeta(); redraw(); toast('消した'); return;
       case 'izumiMore': viewIzumi(renderSeq, true); return;
       case 'import': openImport(); return;
       case 'impGo': {
