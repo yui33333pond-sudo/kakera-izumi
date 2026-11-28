@@ -7,7 +7,7 @@ export const SHELVES = [   // color＝ネオン（線・枠）、text＝その�
   { id: 'kamoku', name: '勘定科目', color: '#3CF2B8', text: '#B8FFE8', shape: 'stack' },
   { id: 'eigo', name: '英語', color: '#29E3FF', text: '#BFF6FF', shape: 'circle' },
   { id: 'hon', name: '本', color: '#FF7A59', text: '#FFD3C6', shape: 'book' },
-  { id: 'genba', name: '現場', color: '#C9CFDB', text: '#E6EAF2', shape: 'triangle' },
+  { id: 'genba', name: '手続', color: '#C9CFDB', text: '#E6EAF2', shape: 'triangle' },
   { id: 'nichijo', name: '日常', color: '#FF4FA8', text: '#FFC6E3', shape: 'leaf' },
 ];
 export const shelfOf = (id) => SHELVES.find((s) => s.id === id);
@@ -39,7 +39,7 @@ const TREE = {
   ],
   eigo: ['英字新聞', '単語帳'],
   hon: [],
-  genba: ['棚卸立会', '現金実査'],
+  genba: ['現金実査', '棚卸立会', '確認', '詳細テスト', '分析的手続'],   // 手続の棚（id は前のまま genba）。「手続を足す」で増やせる
   nichijo: [],
 };
 

@@ -345,3 +345,24 @@ input[type=date]{width:100%;font:inherit;font-size:16px;border:1.5px solid var(-
 .dent:first-child{border-top:0}
 .dent .dd{margin:0 0 4px;font-size:17px}
 .dent .row{margin:4px 0 0}
+
+/* 手続 */
+.pfr{margin:14px 0;display:grid;gap:4px}
+.pfr .lbl{margin-bottom:4px}
+.pitem{display:flex;align-items:flex-start;gap:10px;padding:6px 0;border-top:1px solid color-mix(in srgb,var(--c) 18%,transparent)}
+.pitem .pb{flex:1;font-size:16px;line-height:1.6}
+.pitem .pdot{flex:none;width:6px;height:6px;margin-top:11px;border-radius:50%;background:var(--c)}
+.pchk{flex:none;width:24px;height:24px;margin-top:2px;border:1.5px solid var(--c);border-radius:4px;background:transparent;cursor:pointer}
+.pchk[aria-pressed=true]{background:var(--c);box-shadow:0 0 8px color-mix(in srgb,var(--c) 50%,transparent)}
+.pchk[aria-pressed=true]::after{content:"✓";display:block;color:var(--bg);font-weight:700;line-height:20px;text-align:center}
+.pitem.checked .pb{color:var(--mute);text-decoration:line-through}
+.pform{display:flex;gap:6px;align-items:center;margin:6px 0 2px}
+.pform input{flex:1;min-width:0;padding:8px 12px;font-size:16px}
+.pform .btn{flex:none}
+.pgrp{padding:8px 0;border-top:1px solid color-mix(in srgb,var(--c) 18%,transparent)}
+.pgrp:first-of-type{border-top:0}
+.pgrp .tag{margin-bottom:4px}
+.procfr{margin-top:12px}
+.plist{margin:4px 0 0;padding-left:1.2em}
+.plist li{font-size:16px;line-height:1.6}
+.plist li::marker{color:var(--c)}

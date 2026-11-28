@@ -204,6 +204,7 @@ async function viewNode(n, my, focus) {
   const ch = childrenOf(n.key);
   const direct = ch.filter((c) => c.is_box), sub = ch.filter((c) => !c.is_box);
   paint(`<div class="shelf-head" style="${shVars(sh)}">${shapeSvg(sh.shape, sh.color, 30)}<h1>${esc(isShelf ? sh.name : n.title)}</h1></div>`
+    + (isShelf && n.shelf === 'genba' ? '<div class="row"><button class="btn" data-act="procAdd">手続を足す</button></div>' : '')
     + (direct.length ? `<div class="tiles">${direct.map(tile).join('')}</div>` : '')
     + sub.map((g) => group(g, 0)).join('')
     + (!ch.length ? `<p class="hint">${'まだ箱がない。'}</p>` : ''));
@@ -231,6 +232,7 @@ function drawBox(focus) {
   else if (b.shelf === 'kamoku') body = kamokuBody();
   else if (b.shelf === 'hon') body = bookBody();
   else if (b.shelf === 'nichijo') body = diaryBody();
+  else if (b.shelf === 'genba') body = procBody();
   const path = shelfCrumb(b).slice(0, -1);
   paint(`<div class="boxv" style="${shVars(sh)}"><div class="box-head"><p class="path">${path.map((x) => x.href ? `<a href="${x.href}">${esc(x.t)}</a>` : esc(x.t)).join(' › ')}</p><h1 class="glow">${esc(b.title)}</h1><div class="row"><a class="btn ghost small" href="#/prep/${b.id}">予習</a><button class="btn ghost small" data-act="link">つなぐ</button></div></div>`
     + body + (b.shelf === 'nichijo' ? '' : notesBlock()) + `<section><h2>つながり</h2><div id="links" class="links">${linksHtml([])}</div></section></div>`);
@@ -440,8 +442,12 @@ function kamokuBody() {
   const list = (ax) => { const l = rows.filter((r) => r.axis === ax); return l.length ? l.map((r) => rowHtml(r, AX_COLOR[ax])).join('') : '<p class="none">まだない</p>'; };
   const nameOf = (ax) => AXES.find(([k]) => k === ax)[1];
   const vars = (ax) => `--c:${AX_COLOR[ax]};--ct:color-mix(in srgb,${AX_COLOR[ax]} 45%,#fff)`;
+  const fromProc = boxCtx.cards.filter((c) => c.kind === 'row' && c.box_id !== boxCtx.b.id && (c.labels || []).includes('point'));
+  const procs = [...new Set(fromProc.map((c) => c.box_id))].map((id) => byId.get(id)).filter(Boolean);
+  const procHtml = procs.length ? `<div class="fr neon procfr" style="${shVars(shelfOf('genba'))}"><p class="lbl">手続から</p>${procs.map((pb) => `<div class="pgrp"><a class="tag" href="#/n/${pb.id}" style="${shVars(shelfOf('genba'))}">${esc(pb.title)}</a><ul class="plist">${fromProc.filter((c) => c.box_id === pb.id).map((c) => `<li>${esc(c.body)}</li>`).join('')}</ul></div>`).join('')}</div>` : '';
   return `<div class="fr afr neon"><p class="lbl">アサーション</p>${IN_ASSERTION.map((ax) => `<div class="tube" style="${vars(ax)}"><h3>${nameOf(ax)}</h3>${list(ax)}</div>`).join('')}</div>`
     + `<div class="duo">${AXES.filter(([k]) => !IN_ASSERTION.includes(k)).map(([ax, n]) => `<div class="fr neon" style="${vars(ax)}"><h3>${n}</h3>${list(ax)}</div>`).join('')}</div>`
+    + procHtml
     + `<details class="addrow"><summary>行を足す</summary><form data-form="row"><select name="axis" aria-label="軸">${AXES.map(([k, n]) => `<option value="${k}">${n}</option>`).join('')}</select>`
     + `<div class="row">${Object.entries(LABELS).map(([k, [n]]) => `<label class="chk"><input type="checkbox" name="labels" value="${k}"> ${n}</label>`).join('')}</div>`
     + `<textarea name="body" placeholder="1〜2行で" aria-label="行の中身"></textarea><button class="btn">足す</button></form></details>`;
@@ -532,6 +538,33 @@ function diaryBody() {
       || '<p class="hint">この月はまだ何も書いていない。</p>'}</section>`;
 }
 
+// ---- 手続：実査・立会・詳細テスト… 気をつけること／科目ごとの論点（科目の箱にも出る）／持ち物／次に意識すること ----
+// どれも kind 'row'（軸なし）。labels の先頭で欄を分ける：general / point / bring / next。持ち物のチェックは labels に 'checked'
+const PARTS = [['general', '気をつけること（全般）', '例：現金は2人で数える'], ['point', '科目ごとの論点', ''], ['bring', '持ち物', '例：カイロ、電卓、ヘルメット'], ['next', '次に意識すること', '例：保管場所の一覧を先にもらう']];
+function procBody() {
+  const { b, cards } = boxCtx, w = boxCtx.writing || {};
+  const rows = cards.filter((c) => c.kind === 'row' && c.box_id === b.id && !c.axis);
+  const of = (part) => rows.filter((r) => (r.labels || [])[0] === part).sort((a, c) => a.seq - c.seq || a.created_at.localeCompare(c.created_at));
+  const item = (r, check) => (w.item === r.id
+    ? `<form class="pform" data-form="pitem" data-edit="${r.id}"><input type="text" name="body" value="${esc(r.body)}" aria-label="直す" autocomplete="off"><button class="btn small">直す</button><button type="button" class="btn ghost small" data-act="trCancel">やめる</button><button type="button" class="btn ghost small danger" data-act="pDel" data-id="${r.id}">✕</button></form>`
+    : `<div class="pitem${check && (r.labels || []).includes('checked') ? ' checked' : ''}">${check ? `<button class="pchk" data-act="pCheck" data-id="${r.id}" aria-pressed="${(r.labels || []).includes('checked')}" aria-label="チェック"></button>` : '<span class="pdot" aria-hidden="true"></span>'}<span class="pb">${esc(r.body)}</span><button class="gen fix" data-act="pEdit" data-id="${r.id}">直す</button></div>`);
+  const add = (part, ph, tag) => `<form class="pform" data-form="pitem" data-part="${part}"${tag ? ` data-tag="${tag}"` : ''}><input type="text" name="body" placeholder="${esc(ph)}" aria-label="足す" autocomplete="off"><button class="btn small">足す</button></form>`;
+  const frame = ([part, name, ph]) => {
+    if (part === 'point') {
+      const pts = of('point');
+      const tagIds = [...new Set([...pts.map((r) => (r.tags || [])[0]).filter(Boolean), ...(w.tag ? [w.tag] : [])])];
+      return `<section class="fr neon pfr"><p class="lbl">${name}</p>`
+        + (tagIds.map((t) => { const kb = byId.get(t); return `<div class="pgrp"><a class="tag" href="#/n/${t}" style="${kb ? shVars(shelfOf(kb.shelf)) : ''}">${esc(kb ? kb.title : '？')}</a>${pts.filter((r) => (r.tags || [])[0] === t).map((r) => item(r)).join('')}${add('point', '例：期末日前後の売上を重点的に', t)}</div>`; }).join('')
+          || '<p class="hint small">科目を選ぶと、その科目の箱にも「手続から」で出る。</p>')
+        + `<button class="btn ghost small" data-act="pTag">＋ 科目を選ぶ</button></section>`;
+    }
+    const list = of(part);
+    return `<section class="fr neon pfr"><p class="lbl">${name}</p>${list.map((r) => item(r, part === 'bring')).join('')}${add(part, ph)}`
+      + (part === 'bring' && list.some((r) => (r.labels || []).includes('checked')) ? '<button class="btn ghost small" data-act="pUncheck">チェックを全部外す</button>' : '') + '</section>';
+  };
+  return PARTS.map(frame).join('');
+}
+
 // 追記：日付つき。ほかの箱にも出すときは、向こうでは「〇〇から」
 function notesBlock() {
   const { b, cards, fromSticky } = boxCtx;
@@ -573,7 +606,7 @@ async function viewPrep(b, my) {
   marks = { box: b.id, by: mk || {} }; prepParas = paras;
   crumbs([...shelfCrumb(b).slice(0, -1), { t: b.title, href: `#/n/${b.id}` }, { t: '予習' }]);
   const notes = cards.filter((c) => c.kind === 'note').sort((a, c) => c.created_at.localeCompare(a.created_at));
-  const rows = cards.filter((c) => c.kind === 'row' && c.box_id === b.id).sort((a, c) => (c.labels || []).includes('abunai') - (a.labels || []).includes('abunai'));
+  const rows = cards.filter((c) => c.kind === 'row' && c.box_id === b.id && c.axis).sort((a, c) => (c.labels || []).includes('abunai') - (a.labels || []).includes('abunai'));
   const dgs = secs.filter((s) => s.diagram);
   let html = `<h1 class="ptitle">${esc(b.title)}、その前に</h1>`;
   html += `<section><h2>前に悩んだこと</h2>${notes.length ? `<div class="stack">${notes.map((n) => `<div class="note"><span class="d">${dlabel(n.created_at)}</span><p>${esc(n.body)}</p></div>`).join('')}</div>` : '<p class="hint small">追記はまだない。</p>'}</section>`;
@@ -804,6 +837,19 @@ document.addEventListener('submit', async (e) => {
       const h = `#/n/${box.id}`;
       if (location.hash === h && !from) { boxCtx.writing = null; boxCtx.cards = await store.cards(box.id); await loadMeta(); redraw(); } else location.hash = h;
       return;
+    } else if (f.dataset.form === 'pitem') {
+      const edit = f.dataset.edit;
+      if (edit) await store.patchCard(edit, { body, embedding: null });
+      else {
+        const part = f.dataset.part, tag = f.dataset.tag;
+        const seq = boxCtx.cards.filter((c) => c.kind === 'row' && c.box_id === boxCtx.b.id).length;
+        await store.addCard({ box_id: boxCtx.b.id, kind: 'row', labels: [part], tags: tag ? [tag] : [], body, seq });
+        if (tag && !boxCtx.links.some((l) => (l.a === tag || l.b === tag))) { await store.addLink(boxCtx.b.id, tag); boxCtx.links = await store.links(boxCtx.b.id); }
+      }
+      boxCtx.writing = null; boxCtx.cards = await store.cards(boxCtx.b.id); await loadMeta(); redraw(); backfill();
+      const again = f.dataset.tag ? document.querySelector(`.pform[data-part="point"][data-tag="${f.dataset.tag}"] input`) : document.querySelector(`.pform[data-part="${f.dataset.part}"] input`);
+      if (!edit) again?.focus({ preventScroll: true });
+      return;
     } else if (f.dataset.form === 'bookText') {
       const main = boxCtx.cards.find((c) => c.kind === 'trans' && c.box_id === boxCtx.b.id && !c.section_id);
       if (main) await store.patchCard(main.id, { body, embedding: null });
@@ -862,6 +908,23 @@ document.addEventListener('click', async (e) => {
       case 'diaryNew': { const b = await monthBox(localDay().slice(0, 7)); location.hash = `#/n/${b.id}`; return; }
       case 'diaryEdit': boxCtx.writing = { diary: d.id }; redraw(); $('trBody')?.focus({ preventScroll: true }); return;
       case 'stDiary': { const st = stickies.find((x) => x.id === d.id); const b = await monthBox(localDay(new Date(st ? st.created_at : Date.now())).slice(0, 7)); location.hash = `#/n/${b.id}?from=${d.id}`; return; }
+      case 'procAdd': {
+        const t = (prompt('手続の名前（例：残高確認、売上の詳細テスト）') || '').trim(); if (!t) return;
+        const key = `genba/${t}`;
+        if (!byKey.has(key)) { await store.seedNodes([{ shelf: 'genba', key, parent_key: 'genba', title: t, sort: `004.9.${t}`, is_box: true }]); await loadLibrary(); }
+        location.hash = `#/n/${byKey.get(key).id}`; return;
+      }
+      case 'pEdit': boxCtx.writing = { item: d.id }; redraw(); document.querySelector('.pform[data-edit] input')?.focus({ preventScroll: true }); return;
+      case 'pDel': await store.removeCard(d.id); boxCtx.writing = null; boxCtx.cards = await store.cards(boxCtx.b.id); redraw(); return;
+      case 'pCheck': {
+        const c = boxCtx.cards.find((x) => x.id === d.id); const on = (c.labels || []).includes('checked');
+        c.labels = on ? c.labels.filter((x) => x !== 'checked') : [...c.labels, 'checked'];
+        await store.patchCard(c.id, { labels: c.labels }); redraw(); return;
+      }
+      case 'pUncheck':
+        for (const c of boxCtx.cards.filter((x) => x.box_id === boxCtx.b.id && (x.labels || []).includes('checked'))) { c.labels = c.labels.filter((x) => x !== 'checked'); await store.patchCard(c.id, { labels: c.labels }); }
+        redraw(); toast('チェックを外した。次の現場へ'); return;
+      case 'pTag': openPicker('どの科目の論点？', (k) => { if (!k) return; boxCtx.writing = { tag: k.id }; redraw(); document.querySelector(`.pform[data-tag="${k.id}"] input`)?.focus(); }); return;
       case 'bookAdd': openBookForm(null); return;
       case 'bookEdit': openBookForm(boxCtx.b); return;
       case 'bookWrite': boxCtx.writing = { book: true }; redraw(); $('trBody')?.focus({ preventScroll: true }); return;
