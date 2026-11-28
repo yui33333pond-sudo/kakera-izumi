@@ -1,6 +1,6 @@
 // アプリの画面ファイルだけを預かる。かけら本体（Supabase）とモデルはここでは扱わない。
 // いつもは新しいものを取りに行き、電波がないときだけ預かったものを出す。
-const CACHE = 'yuri-shell-v7';
+const CACHE = 'yuri-shell-v8';
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => {
